@@ -10,6 +10,7 @@ CONFIRMED_AWARD_PREFIX = "Confirmed:"
 REJECTED_AWARD_PREFIX = "This delta has been rejected"
 
 # node fields names
+NODE_FIELD = "node"
 AUTHOR_FIELD = "author"
 TEXT_FIELD = "text"
 TIMESTAMP_FIELD = "timestamp"
@@ -26,17 +27,19 @@ class UsersInteraction:
 
 
 def parse_users_interactions(tree: dict):
-    interactions: Dict[str, Dict[str: UsersInteraction]] = {}
-    op: str
-    current_branch_nodes: List[dict] = []
-    for depth, node in walk_tree(tree):
 
-        # check if first user (i.e post author)
-        if len(current_branch_nodes) == 0:
-            current_branch_nodes.append(node)
-            op = node[AUTHOR_FIELD]
-            continue
+    # get OP and the first node of the conversation and initialize variables
+    first_node = tree[NODE_FIELD]
+    op: str = first_node[AUTHOR_FIELD]
+    current_branch_nodes: List[dict] = [first_node]
+    interactions: Dict[str, Dict[str: UsersInteraction]] = { op: {} }
 
+    tree_nodes = walk_tree(tree)
+    # skip the first node
+    next(tree_nodes)
+    for depth, node in tree_nodes:
+
+        # check if the entire current branch was parsed, and start walking to the next branch
         if depth < len(current_branch_nodes):
             del current_branch_nodes[depth:]
 

@@ -12,13 +12,18 @@ from user_interaction.users_interaction_graph import build_users_interaction_gra
 from utils import iter_trees_from_jsonl
 
 
+def calculate_edge_weight(edge_data: dict) -> float:
+    return edge_data["num_replies"]
+
+
 def analyze_data(trees: Iterable[dict]):
 
     for i, tree in enumerate(trees):
         print(f"Tree: {i}")
         interactions = parse_users_interactions(tree)
         print(json.dumps(tree, indent=4))
-        build_users_interaction_graph(interactions)
+        op = tree["node"]["author"]
+        build_users_interaction_graph(interactions, weight_func=calculate_edge_weight, op=op)
 
         # print(json.dumps(interactions, indent=4, default=lambda cls: cls.__dict__))
 
