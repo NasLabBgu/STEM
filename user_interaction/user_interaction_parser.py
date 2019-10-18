@@ -26,17 +26,18 @@ class UsersInteraction:
     num_rejected_delta_awards: int = 0
 
 
-def parse_users_interactions(tree: dict):
-
+def parse_users_interactions(tree: dict) -> Dict[str, Dict[str, UsersInteraction]]:
+    """
+    parse the different interactions of the users in the given conversation 'tree' between the users.
+    :param tree: conversation tree
+    :return: interactions graph between the users in the tree, such that each edge in the graph
+             represents a summary of multiple types of interactions between the two adjacent users.
+    """
     # get OP and the first node of the conversation and initialize variables
     first_node = tree[NODE_FIELD]
     op: str = first_node[AUTHOR_FIELD]
-
-    # Stores the previous nodes in the parsed branch, starting from the root to the node being parsed currently.
-    current_branch_nodes: List[dict] = [first_node]
-
-    # Stores all of the interactions in the conversation tree between users.
-    interactions: Dict[str, Dict[str: UsersInteraction]] = {op: {}}
+    interactions: Dict[str, Dict[str, UsersInteraction]] = {op: {}}
+    current_branch_nodes: List[dict] = [first_node]     # Stores the previous nodes in the parsed branch
 
     tree_nodes = walk_tree(tree)
     next(tree_nodes)    # skip the first node
@@ -64,6 +65,9 @@ def parse_users_interactions(tree: dict):
 
         current_branch_nodes.append(node)
 
+    if DELTA_BOT_USER in interactions:
+        del interactions[DELTA_BOT_USER]
+
     return interactions
 
 
@@ -86,30 +90,33 @@ def add_award_interaction(author: str, text: str, op: str, current_branch_nodes:
     if delta_award_recipient == "OP":
         delta_award_recipient = op
 
-    if delta_award_recipient is not None:
-        if delta_award_recipient != current_branch_nodes[-2][AUTHOR_FIELD]:
-            if current_branch_nodes[-2][AUTHOR_FIELD] != "[deleted]":
-                print(delta_award_recipient, current_branch_nodes[-2][AUTHOR_FIELD])
-                delta_award_recipient = current_branch_nodes[-2][AUTHOR_FIELD]
+    if delta_award_recipient is None:
+        return False
 
-        pair_interaction = author_interactions.setdefault(delta_award_recipient, UsersInteraction())
-        if delta_award_status == 1:
-            pair_interaction.num_rejected_delta_awards += 1
-        else:
-            pair_interaction.num_confirmed_delta_awards += 1
+    if delta_award_recipient != current_branch_nodes[-2][AUTHOR_FIELD]:
+        if current_branch_nodes[-2][AUTHOR_FIELD] != "[deleted]":
+            print(delta_award_recipient, current_branch_nodes[-2][AUTHOR_FIELD])
+            delta_award_recipient = current_branch_nodes[-2][AUTHOR_FIELD]
 
-        return True
+    pair_interaction = author_interactions.setdefault(delta_award_recipient, UsersInteraction())
+    if delta_award_status == 1:
+        pair_interaction.num_rejected_delta_awards += 1
+    else:
+        pair_interaction.num_confirmed_delta_awards += 1
 
-    return False
+    return True
 
 
-def add_reply_interactions(parent_author: str, author_interactions: Dict[str, UsersInteraction]):
+def add_reply_interactions(parent_author: str, author_interactions: Dict[str, UsersInteraction]) -> bool:
     """
     add reply interaction from the author of the reply to parent node author.
     :param parent_author: the recipient of the reply
     :param author_interactions: interactions from the reply author to other users
-    :return: None
+    :return: return True if interaction found, False otherwise.
     """
+    if parent_author == DELTA_BOT_USER:
+        return False
+
     pair_interaction = author_interactions.setdefault(parent_author, UsersInteraction())
     pair_interaction.num_replies += 1
 
@@ -142,10 +149,12 @@ def add_quotes_interactions(text: str, tree: dict, current_branch_nodes: List[di
     :return: return number of added interactions
     """
     quotes_positions = find_quotes(text)
-    quotes_authors = [
-        find_quote_author(
-            text[slice(*q)], tree, reversed(current_branch_nodes), timestamp)
-        for q in quotes_positions]
+    quotes_authors = []
+    for pos, endpos in quotes_positions:
+        quote = text[pos: endpos]
+        author = find_quote_author(quote, tree, reversed(current_branch_nodes), timestamp)
+        if author is not None:
+            quotes_authors.append(author)
 
     for quote_author in quotes_authors:
         pair_interaction = author_interactions.setdefault(quote_author, UsersInteraction())

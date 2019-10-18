@@ -7,6 +7,7 @@ from typing import List, Iterable
 import numpy as np
 import pandas as pd
 
+from stance_classification.maxcut import max_cut
 from user_interaction.user_interaction_parser import parse_users_interactions
 from user_interaction.users_interaction_graph import build_users_interaction_graph
 from utils import iter_trees_from_jsonl
@@ -23,7 +24,11 @@ def analyze_data(trees: Iterable[dict]):
         interactions = parse_users_interactions(tree)
         print(json.dumps(tree, indent=4))
         op = tree["node"]["author"]
-        build_users_interaction_graph(interactions, weight_func=calculate_edge_weight, op=op)
+        graph = build_users_interaction_graph(interactions, weight_func=calculate_edge_weight, op=op)
+
+        weights = {(i, j): calculate_edge_weight(d) for i, j, d in graph.edges(data=True)}
+
+        max_cut(graph, weights)
 
         # print(json.dumps(interactions, indent=4, default=lambda cls: cls.__dict__))
 

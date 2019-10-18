@@ -23,7 +23,7 @@ def build_users_interaction_graph(users_interactions: Dict[str, Dict[str, UsersI
     graph = nx.DiGraph(graph_data)
 
     # draw graph with different edges weights:
-    pos = nx.spring_layout(graph)
+    pos = nx.spring_layout(graph, seed=1919)
     nx.draw_networkx_nodes(graph, pos, node_color='b')
 
     # draw op node with different color
