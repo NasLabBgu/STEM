@@ -13,32 +13,47 @@ def get_one(data: dict): return DEFAULT_WEIGHT
 
 
 def build_users_interaction_graph(users_interactions: Dict[str, Dict[str, UsersInteraction]],
-                                  weight_func: Callable[[dict], float] = None,
-                                  op: str = None) -> nx.Graph:
+                                  weight_func: Callable[[dict], float] = None
+                                  ) -> nx.Graph:
 
     if weight_func is None:
         weight_func = get_one
 
-    graph_data = {out_user: {in_user: d.__dict__ for in_user, d in in_users.items()} for out_user, in_users in users_interactions.items()}
-    graph = nx.DiGraph(graph_data)
+    def dict_plus_weight(edge_data: dict) -> dict:
+        edge_data["weight"] = weight_func(edge_data)
+        return edge_data
 
+    graph_data = []
+    for source_user, target_users in users_interactions.items():
+        source_user_interactions = []
+        for target_user, interact in target_users.items():
+            interact_dict_with_weight = dict_plus_weight(interact.__dict__)
+            source_user_interactions.append((target_user, interact_dict_with_weight))
+
+        graph_data.append((source_user, dict(source_user_interactions)))
+
+    graph_data = dict(graph_data)
+    graph = nx.DiGraph(graph_data)
+    return graph
+
+
+def draw_user_interactions_graph(graph: nx.Graph, op: str = None, ax: plt.Axes = None):
     # draw graph with different edges weights:
     pos = nx.spring_layout(graph, seed=1919)
-    nx.draw_networkx_nodes(graph, pos, node_color='b')
+    nx.draw_networkx_nodes(graph, pos, node_color='b', ax=ax)
 
     # draw op node with different color
     if op is not None:
-        nx.draw_networkx_nodes(graph, pos, nodelist=[op], node_color='r')
+        nx.draw_networkx_nodes(graph, pos, nodelist=[op], node_color='r', ax=ax)
 
     nx.draw_networkx_labels(graph, pos)
 
     # draw edges with different width according to weight function
     for u, v, edge_data in graph.edges(data=True):
-        weight = weight_func(edge_data)
-        nx.draw_networkx_edges(graph, pos, edgelist=[(u, v)], width=weight)
+        nx.draw_networkx_edges(graph, pos, edgelist=[(u, v)], width=edge_data["weight"], ax=ax)
 
     plt.show()
-    return graph
+
 
 
 

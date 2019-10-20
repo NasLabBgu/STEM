@@ -9,24 +9,22 @@ import numpy as np
 import pylab
 
 
-def max_cut(G: nx.Graph, weights: Dict[Tuple[int, int], float]):
-    """
+DEFAULT_EDGE_WEIGHT = {"weight": 0}
 
-    :param G: an undirected graph
-    :param weights:
-    :return:
-    """
+OP_COLOR = 'green'
+SUPPORT_COLOR = 'lightgreen'
+OPPOSE_COLOR = 'lightblue'
 
+
+def solve_maxcut(G: nx.Graph):
     # Make G undirected.
     G = nx.Graph(G)
-    num_nodes = len(G.nodes())
-
-    if num_nodes <= 1:
-        return
+    num_nodes = G.number_of_nodes()
 
     # Allocate weights to the edges.
+    edges_set = G.edges()
     for (i, j) in G.edges():
-        G[i][j]['weight'] = weights.get((i, j), 0) + weights.get((j, i), 0)
+        G[i][j]['weight'] = edges_set.get((i, j), 0)["weight"] + edges_set.get((j, i), 0)["weight"]
 
     maxcut = pic.Problem()
 
@@ -53,9 +51,20 @@ def max_cut(G: nx.Graph, weights: Dict[Tuple[int, int], float]):
 
     # print('bound from the SDP relaxation: {0}'.format(maxcut.obj_value()))
 
+    return G, X, L, num_nodes, maxcut
+
+
+def find_relaxation(G, X, L, num_nodes, maxcut) -> Tuple[float, set]:
+    """
+    :param X: Positive Semidefinite matrix
+    :param L:  Laplacian matix of the graph
+    :param num_nodes:
+    :param maxcut:
+    :return:
+    """
     ### Perform the random relaxation
     # Use a fixed RNG seed so the result is reproducable.
-    cvx.setseed(1)
+    cvx.setseed(1919)
 
     # Perform a Cholesky factorization.
     V = X.value
@@ -81,36 +90,61 @@ def max_cut(G: nx.Graph, weights: Dict[Tuple[int, int], float]):
     x = x_cut
 
     # Extract the cut and the seperated node sets.
-    nodes_index_mapping = {n: i for i, n in enumerate(G.nodes())}
-    S1 = [n for n in range(num_nodes) if x[n] < 0]
-    S2 = [n for n in range(num_nodes) if x[n] > 0]
-    cut = [(i, j) for (i, j) in G.edges() if x[nodes_index_mapping[i]] * x[nodes_index_mapping[j]] < 0]
-    leave = [e for e in G.edges if e not in cut]
+    indexed_nodes = list(G.nodes)
+    cut_nodes = [indexed_nodes[i] for i in range(num_nodes) if x[i] < 0]
+    return maxcut.obj_value(), cut_nodes
+
+
+def max_cut(G: nx.Graph) -> Tuple[float, set]:
+    """
+    :param G: an undirected graph
+    :param weights:
+    :return:
+    """
+    if G.number_of_nodes() <= 1:
+        return 0, G.nodes()
+
+    G, X, L, num_nodes, maxcut = solve_maxcut(G)
+    relxation_value, cut_nodes = find_relaxation(G, X, L, num_nodes, maxcut)
+    return relxation_value, cut_nodes
+
+
+def draw_maxcut(graph: nx.Graph, cut_nodes: set, relaxation_value: float, op: str = None):
+
+    cut = set([(i, j) for i, j in graph.edges if (i in cut_nodes) and (j not in cut_nodes)])
+    leave = [e for e in graph.edges if e not in cut]
 
     ### Drawing the cut
     # Close the old figure and open a new one.
     new_figure()
-
     # Assign colors based on set membership.
-    node_colors = [('lightgreen' if n in S1 else 'lightblue') for n in range(num_nodes)]
+
+
+    cut_color = SUPPORT_COLOR  if op in cut_nodes else OPPOSE_COLOR
+    noncut_color = OPPOSE_COLOR if cut_color == SUPPORT_COLOR else SUPPORT_COLOR
+
+    node_colors = [OP_COLOR if (n == op) else (cut_color if n in cut_nodes else noncut_color) for n in graph.nodes]
+
+    # draw op node with different color
+    if op is not None:
+        op_color = 'green' if op in cut_nodes else 'blue'
 
     # Draw the nodes and the edges that are not in the cut.
-    pos = nx.spring_layout(G, seed=1919)
-    nx.draw_networkx(G, pos, node_color=node_colors, edgelist=leave)
-    labels = {e: '{}'.format(G[e[0]][e[1]]['weight']) for e in leave}
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)
+    pos = nx.spring_layout(graph, seed=1919)
+    nx.draw_networkx(graph, pos, node_color=node_colors, edgelist=leave)
+    labels = {e: '{}'.format(graph[e[0]][e[1]]['weight']) for e in leave}
+    nx.draw_networkx_edge_labels(graph, pos, edge_labels=labels)
 
     # Draw the edges that are in the cut.
-    nx.draw_networkx_edges(G, pos, edgelist=cut, edge_color='r')
-    labels = {e: '{}'.format(G[e[0]][e[1]]['weight']) for e in cut}
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=labels, font_color='r')
+    nx.draw_networkx_edges(graph, pos, edgelist=cut, edge_color='r')
+    labels = {e: '{}'.format(graph[e[0]][e[1]]['weight']) for e in cut}
+    nx.draw_networkx_edge_labels(graph, pos, edge_labels=labels, font_color='r')
 
     # Show the relaxation optimum value and the cut capacity.
-    rval = maxcut.obj_value()
-    sval = sum(G[e[0]][e[1]]['weight'] for e in cut)
+    sval = sum(graph[e[0]][e[1]]['weight'] for e in cut)
     fig.suptitle(
         'SDP relaxation value: {0:.1f}\nCut value: {1:.1f} = {2:.3f}×{0:.1f}'
-            .format(rval, sval, sval / rval), fontsize=16, y=0.97)
+            .format(relaxation_value, sval, sval / relaxation_value), fontsize=16, y=0.97)
 
     # Show the figure.
     pylab.show()
