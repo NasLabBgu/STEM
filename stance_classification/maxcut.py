@@ -9,23 +9,19 @@ import numpy as np
 import pylab
 
 
-DEFAULT_EDGE_WEIGHT = {"weight": 0}
-
 OP_COLOR = 'green'
 SUPPORT_COLOR = 'lightgreen'
 OPPOSE_COLOR = 'lightblue'
 
 
 def solve_maxcut(G: nx.Graph):
-    # Make G undirected.
-    G = nx.Graph(G)
+    """
+
+    :param G: undirected graph
+    :return:
+    """
+
     num_nodes = G.number_of_nodes()
-
-    # Allocate weights to the edges.
-    edges_set = G.edges()
-    for (i, j) in G.edges():
-        G[i][j]['weight'] = edges_set.get((i, j), 0)["weight"] + edges_set.get((j, i), 0)["weight"]
-
     maxcut = pic.Problem()
 
     # Add the symmetric matrix variable.
@@ -111,7 +107,7 @@ def max_cut(G: nx.Graph) -> Tuple[float, set]:
 
 def draw_maxcut(graph: nx.Graph, cut_nodes: set, relaxation_value: float, op: str = None):
 
-    cut = set([(i, j) for i, j in graph.edges if (i in cut_nodes) and (j not in cut_nodes)])
+    cut = set([(i, j) for i, j in graph.edges if (i in cut_nodes) ^ (j in cut_nodes)])
     leave = [e for e in graph.edges if e not in cut]
 
     ### Drawing the cut
