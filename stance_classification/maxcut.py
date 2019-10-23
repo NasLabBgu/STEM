@@ -105,7 +105,7 @@ def max_cut(G: nx.Graph) -> Tuple[float, set]:
     return relxation_value, cut_nodes
 
 
-def draw_maxcut(graph: nx.Graph, cut_nodes: set, relaxation_value: float, op: str = None):
+def draw_maxcut(graph: nx.Graph, cut_nodes: set, relaxation_value: float, op: str = None, outpath=None):
 
     cut = set([(i, j) for i, j in graph.edges if (i in cut_nodes) ^ (j in cut_nodes)])
     leave = [e for e in graph.edges if e not in cut]
@@ -143,6 +143,9 @@ def draw_maxcut(graph: nx.Graph, cut_nodes: set, relaxation_value: float, op: st
             .format(relaxation_value, sval, sval / relaxation_value), fontsize=16, y=0.97)
 
     # Show the figure.
+    if outpath is not None:
+        pylab.savefig(outpath)
+
     pylab.show()
 
 
@@ -153,7 +156,7 @@ def new_figure():
         pylab.close(fig)
     except NameError:
         pass
-    fig = pylab.figure(figsize=(11, 8))
+    fig = pylab.figure(figsize=(20, 15))
     fig.gca().axes.get_xaxis().set_ticks([])
     fig.gca().axes.get_yaxis().set_ticks([])
 

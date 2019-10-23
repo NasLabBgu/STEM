@@ -47,7 +47,8 @@ def to_undirected_gaprh(graph: nx.DiGraph) -> nx.Graph:
     return graph
 
 
-def draw_user_interactions_graph(graph: nx.Graph, op: str = None, ax: plt.Axes = None, use_weight=False):
+def draw_user_interactions_graph(graph: nx.Graph, op: str = None, ax: plt.Axes = None, use_weight=False, outpath=None):
+    plt.figure(figsize=(21, 12))
     # draw graph with different edges weights:
     pos = nx.spring_layout(graph, seed=1919)
     node_colors = ['b' if user != op else 'r' for user in graph.nodes]   # draw op node with different color
@@ -61,6 +62,12 @@ def draw_user_interactions_graph(graph: nx.Graph, op: str = None, ax: plt.Axes =
         if weight > 1:
             weight
         nx.draw_networkx_edges(graph, pos, edgelist=[(u, v)], width=weight, ax=ax)
+
+    if outpath:
+        # manager = plt.get_current_fig_manager()
+        # # manager.resize(*manager.window.maxsize())
+        # manager.full_screen_toggle()
+        plt.savefig(outpath)
 
     plt.show()
 

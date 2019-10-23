@@ -33,26 +33,29 @@ def remove_irrelevant_users_interaction(users_interactions: Dict[str, Dict[str, 
 def analyze_data(trees: Iterable[dict]):
 
     for i, tree in enumerate(trees):
+        if i < 3:
+            continue
+        if i > 3:
+            break
         print(f"Tree: {i}")
         interactions = parse_users_interactions(tree)
-        # interactions = remove_irrelevant_users_interaction(interactions)
+        interactions = remove_irrelevant_users_interaction(interactions)
         print(json.dumps(tree, indent=4))
         op = tree["node"]["author"]
 
         def calculate_edge_weight(edge_data: dict, edge: Tuple[str, str]) -> float:
-            return edge_data["num_replies"] + edge_data["num_quotes"]
+            return edge_data["num_replies"] + edge_data["num_quotes"] + (edge_data["num_confirmed_delta_awards"] + edge_data["num_rejected_delta_awards"]) * 3
 
         graph = build_users_interaction_graph(interactions, weight_func=calculate_edge_weight)
 
-        draw_user_interactions_graph(graph, op=op, use_weight=False)
-        draw_user_interactions_graph(graph, op=op, use_weight=True)
+        # draw_user_interactions_graph(graph, op=op, use_weight=True, outpath=f"/home/ron/workspace/bgu/stance-classification/examples/users-interactions-{i}-latest.png")
 
         if graph.number_of_nodes() <= 1:
             continue
 
         undir_graph = to_undirected_gaprh(graph)
         rval, cut_nodes = max_cut(undir_graph)
-        draw_maxcut(undir_graph, cut_nodes, rval, op)
+        draw_maxcut(undir_graph, cut_nodes, rval, op, outpath=f"/home/ron/workspace/bgu/stance-classification/examples/users-interactions-{i}-maxcut-latest.png")
 
 
         # print(json.dumps(interactions, indent=4, default=lambda cls: cls.__dict__))
