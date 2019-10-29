@@ -2,7 +2,9 @@ import json
 from operator import itemgetter
 from typing import Iterable, Tuple, List, Dict
 
+from community.community_detection import find_best_partition, plot_betweeness, spatial_bipartition
 from data_analyze import remove_irrelevant_users_interaction
+from graph_utils import remove_nodes_without_interactions, get_op_connected_component
 from stance_classification.maxcut import max_cut, draw_maxcut
 from user_interaction.user_interaction_parser import parse_users_interactions, UsersInteraction
 from user_interaction.users_interaction_graph import build_users_interaction_graph, draw_user_interactions_graph, \
@@ -54,9 +56,18 @@ def show_labels(trees: Iterable[dict]):
         interactions = remove_irrelevant_users_interaction(interactions, op, min_op_interact=2,
                                                            weight_func=calculate_edge_weight)
 
+        # interactions = remove_nodes_without_interactions(interactions)
+
         graph = build_users_interaction_graph(interactions, weight_func=calculate_edge_weight)
+        undir_graph = to_undirected_gaprh(graph)
+        op_connected_nodes = get_op_connected_component(undir_graph, op)
+        graph = graph.subgraph(op_connected_nodes)
+
+        plot_betweeness(graph)
+        # find_best_partition(graph)
         # draw_user_interactions_graph(graph, op=op, use_weight=True
         undir_graph = to_undirected_gaprh(graph)
+        # spatial_bipartition(undir_graph)
         try:
             rval, cut_nodes = max_cut(undir_graph)
             draw_maxcut(undir_graph, cut_nodes, rval, op)
