@@ -1,6 +1,6 @@
 from typing import Union, Dict, List, Iterable
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 
 from treetools.TreeTools import walk_tree
 from utils import find_user_mentions, strip_mention_prefix, find_quotes, strip_quote_symbols, is_source_of_quote
@@ -14,7 +14,9 @@ NODE_FIELD = "node"
 AUTHOR_FIELD = "author"
 TEXT_FIELD = "text"
 TIMESTAMP_FIELD = "timestamp"
+LABELS_FIELD = "labels"
 
+D = []
 
 
 @dataclass
@@ -24,6 +26,10 @@ class UsersInteraction:
     num_quotes: int = 0
     num_confirmed_delta_awards: int = 0
     num_rejected_delta_awards: int = 0
+    labels: list = dataclass_field(default_factory=list)
+
+    def __getitem__(self, field: str):
+        return self.__dict__[field]
 
 
 def parse_users_interactions(tree: dict) -> Dict[str, Dict[str, UsersInteraction]]:
@@ -47,7 +53,7 @@ def parse_users_interactions(tree: dict) -> Dict[str, Dict[str, UsersInteraction
             del current_branch_nodes[depth:]
 
         text = node[TEXT_FIELD]
-        timestamp = node[TIMESTAMP_FIELD]
+        timestamp = 0# node[TIMESTAMP_FIELD]
         current_author = node[AUTHOR_FIELD]
         author_interactions = interactions.setdefault(current_author, {})
 
@@ -62,6 +68,7 @@ def parse_users_interactions(tree: dict) -> Dict[str, Dict[str, UsersInteraction
             add_reply_interactions(prev_author, author_interactions)
             add_mentions_interactions(text, author_interactions)
             add_quotes_interactions(text, tree, current_branch_nodes, timestamp, author_interactions)
+            add_labels(node, prev_author, author_interactions)
 
         current_branch_nodes.append(node)
 
@@ -190,7 +197,7 @@ def find_quote_author(quote: str, tree: dict, preferred_nodes: Iterable[dict] = 
             return node[AUTHOR_FIELD]
 
 
-def check_delta_award(author: str, text: str):
+def check_delta_award(author: str, text: str) -> int:
     """
     check if the given text and author imply on delta award
     :param text:
@@ -207,7 +214,7 @@ def check_delta_award(author: str, text: str):
     return 0
 
 
-def find_award_recipient(delta_bot_text: str, award_status: int = None) -> Union[str, None]:
+def find_award_recipient(delta_bot_text: str, award_status: int = -1) -> Union[str, None]:
     """
     extract the name of the awarded user.
     :param delta_bot_text: the award confirmation or rejection text by DeltaBot
@@ -234,6 +241,28 @@ def find_award_recipient(delta_bot_text: str, award_status: int = None) -> Union
     award_recipient_mention = mentions[0]
     username = strip_mention_prefix(delta_bot_text[slice(*award_recipient_mention)])
     return username
+
+
+def add_labels(current_node: dict, parent_author: str, author_interactions: Dict[str, UsersInteraction]) -> bool:
+    """
+    extract the labels from the node if exists
+    :param current_node:
+    :param parent_author:
+    :param author_interactions: interactions from the author of 'text' to other users
+    :return: the labels dictionary if labels exists, otherwise empty dictionary
+    """
+    labels = current_node.setdefault(LABELS_FIELD, {})
+    if len(labels) == 0:
+        return False
+
+    pair_interaction = author_interactions.setdefault(parent_author, UsersInteraction())
+    pair_interaction.labels.append(labels)
+    return True
+
+
+
+
+
 
 
 

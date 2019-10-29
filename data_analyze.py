@@ -2,13 +2,13 @@
 import argparse
 import json
 
-from typing import List, Iterable, Dict, Tuple
+from typing import List, Iterable, Dict, Tuple, Callable
 
 import numpy as np
 import pandas as pd
 
 from stance_classification.maxcut import max_cut, draw_maxcut
-from user_interaction.user_interaction_parser import parse_users_interactions
+from user_interaction.user_interaction_parser import parse_users_interactions, UsersInteraction
 from user_interaction.users_interaction_graph import build_users_interaction_graph, draw_user_interactions_graph, \
     to_undirected_gaprh
 from utils import iter_trees_from_jsonl
@@ -17,7 +17,27 @@ from utils import iter_trees_from_jsonl
 IRRELEVANT_USERS = {None, "DeltaBot", "[deleted]"}
 
 
-def remove_irrelevant_users_interaction(users_interactions: Dict[str, Dict[str, dict]]):
+def is_relevant_user(source_user, users_interactions: Dict[str, Dict[str, UsersInteraction]],
+                     op: str, min_op_interaction: int = 1, weight_func: Callable = None) -> bool:
+
+    if source_user in IRRELEVANT_USERS:
+        return False
+
+    source_user_interactions = users_interactions[source_user]
+
+    if all(map(IRRELEVANT_USERS.__contains__, source_user_interactions.keys())):
+        return False
+
+    if len(source_user_interactions) == 1 and op in users_interactions:
+        if weight_func is not None and op in source_user_interactions:
+            if weight_func(source_user_interactions[op]) < min_op_interaction:
+                if not any(map(lambda interact: source_user in interact, users_interactions.values())):
+                    return False
+
+    return True
+
+
+def remove_irrelevant_users_interaction(users_interactions: Dict[str, Dict[str, dict]], op: str, min_op_interact: int = 1, weight_func: Callable = None):
     global IRRELEVANT_USERS
     users_interactions = {
         out_user: {in_user: d
@@ -25,7 +45,7 @@ def remove_irrelevant_users_interaction(users_interactions: Dict[str, Dict[str, 
                    if in_user not in IRRELEVANT_USERS
                    }
         for out_user, in_users in users_interactions.items()
-        if out_user not in IRRELEVANT_USERS
+        if is_relevant_user(out_user, users_interactions, op, min_op_interact, weight_func)
     }
     return users_interactions
 
@@ -33,19 +53,15 @@ def remove_irrelevant_users_interaction(users_interactions: Dict[str, Dict[str, 
 def analyze_data(trees: Iterable[dict]):
 
     for i, tree in enumerate(trees):
-        if i < 3:
-            continue
-        if i > 3:
-            break
-        print(f"Tree: {i}")
-        interactions = parse_users_interactions(tree)
-        interactions = remove_irrelevant_users_interaction(interactions)
-        print(json.dumps(tree, indent=4))
         op = tree["node"]["author"]
+        print(f"Tree: {i} ;\tOP: {op}")
+        interactions = parse_users_interactions(tree)
+        print(json.dumps(tree, indent=4))
 
         def calculate_edge_weight(edge_data: dict, edge: Tuple[str, str]) -> float:
             return edge_data["num_replies"] + edge_data["num_quotes"] + (edge_data["num_confirmed_delta_awards"] + edge_data["num_rejected_delta_awards"]) * 3
 
+        interactions = remove_irrelevant_users_interaction(interactions, op, min_op_interact=2, weight_func=calculate_edge_weight)
         graph = build_users_interaction_graph(interactions, weight_func=calculate_edge_weight)
 
         # draw_user_interactions_graph(graph, op=op, use_weight=True, outpath=f"/home/ron/workspace/bgu/stance-classification/examples/users-interactions-{i}-latest.png")
