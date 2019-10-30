@@ -2,7 +2,8 @@ import json
 from operator import itemgetter
 from typing import Iterable, Tuple, List, Dict
 
-from community.community_detection import find_best_partition, plot_betweeness, spatial_bipartition
+from community.community_detection import plot_partitions_score, spatial_bipartition, find_communities
+from community.community_utils import get_op_community
 from data_analyze import remove_irrelevant_users_interaction
 from graph_utils import remove_nodes_without_interactions, get_op_connected_component
 from stance_classification.maxcut import max_cut, draw_maxcut
@@ -40,6 +41,8 @@ def get_certain_labels(pair_labels: List[Dict[str, List[str]]]) -> List[str]:
 def show_labels(trees: Iterable[dict]):
 
     for i, tree in enumerate(trees):
+        if i == 1:
+            continue
         op = tree["node"]["author"]
         print(f"Tree: {i} ; OP: {op}")
         interactions = parse_users_interactions(tree)
@@ -61,12 +64,16 @@ def show_labels(trees: Iterable[dict]):
         graph = build_users_interaction_graph(interactions, weight_func=calculate_edge_weight)
         undir_graph = to_undirected_gaprh(graph)
         op_connected_nodes = get_op_connected_component(undir_graph, op)
-        graph = graph.subgraph(op_connected_nodes)
+        # graph = graph.subgraph(op_connected_nodes)
+        undir_graph = undir_graph.subgraph(op_connected_nodes)
+        draw_user_interactions_graph(undir_graph, op=op, use_weight=True, title=f"{tree['node']['title']}")
 
-        plot_betweeness(graph)
-        # find_best_partition(graph)
-        # draw_user_interactions_graph(graph, op=op, use_weight=True
-        undir_graph = to_undirected_gaprh(graph)
+        # communities = find_communities(graph)
+        # graph = get_op_community(graph, communities, op)
+        # # plot_betweeness(graph)
+        # # find_best_partition(graph)
+        # draw_user_interactions_graph(graph, op=op, use_weight=True)
+        # undir_graph = to_undirected_gaprh(graph)
         # spatial_bipartition(undir_graph)
         try:
             rval, cut_nodes = max_cut(undir_graph)

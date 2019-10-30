@@ -1,37 +1,33 @@
+from typing import List, Iterable
+
 import networkx as nx
 from networkx.algorithms import community
 from networkx.algorithms.community import greedy_modularity_communities
+from networkx.algorithms.community.quality import performance as modularity_score
 import matplotlib.pyplot as plt
 import random
 import numpy as np
 from operator import itemgetter
 
 
-def modularity_score(communities, G):
+def modularity_score2(G: nx.Graph, communities: List[List[str]]):
     n_doubled_edges = 2 * len(G.edges)
     res = 0
     for c in communities:
         for i in c:
             for j in c:
-                # if i == j:
-                # 	continue
-                # print("nodes: ({}, {})".format(i, j))
                 A_ij = int(j in G[i])
-                # print("A_ij: {}".format(A_ij))
                 expected = G.degree[i] * G.degree(j) * 1. / n_doubled_edges
-                # print("{} * {} / 2m = {}".format(G.degree[i], G.degree[j], expected))
                 res += A_ij - expected
-            # print("{} - {} = {}".format(A_ij, expected, A_ij - expected))
-            # print()
 
     return res / n_doubled_edges
 
 
-def find_best_partition(G):
+def plot_partitions_score(G):
     for i in range(1):
         random.seed(246 + i)
         np.random.seed(4812 + i)
-        communities_generator = community.girvan_newman(G)
+        communities_generator = community.girvan_newman(G, most_valuable_edge=find_most_central_edge)
         n_clusters = []
         scores = []
         for com in [[G.nodes]] + list(communities_generator):
@@ -49,21 +45,30 @@ def find_best_partition(G):
     plt.show()
 
 
-def plot_betweeness(G, pos=None, source=None):
+def find_most_central_edge(graph: nx.Graph):
+    # edge_betweeness_values = nx.edge_betweenness_centrality(graph, weight="weight")
+    edge_betweeness_values = nx.edge_betweenness_centrality(graph)
+    max_edge, max_value = max(edge_betweeness_values.items(), key=itemgetter(1))
+    print(f"{max_edge}: {max_value}")
+    return max_edge
 
-    if pos is None:
-        pos = nx.spring_layout(G, seed=1919)
-    # edge_labels = {k: str(v) for k,v in nx.algorithms.centrality.load._edge_betweenness(G, source='B').items()}
-    if source is None:
-        edge_labels = calc_betweeness(G)
-    else:
-        edge_labels = edge_betweenness(G, source)
-    nx.draw_networkx(G, pos=pos, edge_labels=edge_labels)
-    nx.draw_networkx_edge_labels(G, pos=pos, edge_labels=edge_labels)
-    # betweenness = nx.edge_betweenness_centrality(G)
-    # print(betweenness)
 
-    plt.show()
+def find_communities(graph: nx.Graph) -> Iterable[List[str]]:
+    communities_generator = community.girvan_newman(graph, most_valuable_edge=find_most_central_edge)
+    all_community_separations = [[graph.nodes]]
+    scores = [modularity_score2(graph, [graph.nodes])]
+    for communities in communities_generator:
+        all_community_separations.append(communities)
+        num_clusters = len(communities)
+        s = modularity_score(graph, communities)
+        scores.append(s)
+
+        print(f"{num_clusters}: {s} -> {s / np.log2(np.log2(num_clusters + 1))}")
+
+    # find max score and return the corresponding separation to communities
+    max_index = np.argmax(map(lambda s, c: s / np.log2(np.log2(len(c)+1)), zip(scores, all_community_separations)))
+    print(max_index)
+    return all_community_separations[max_index]
 
 
 def spatial_bipartition(G):
@@ -149,7 +154,7 @@ if __name__ == "__main__":
     #     D=(0.66, -0.33), G=(-0.33, -1), E=(0.33, -1))
     # plot_betweeness(G, pos=nodes_positions)
 
-    find_best_partition(G)
+    plot_partitions_score(G)
     spatial_bipartition(G)
 
 

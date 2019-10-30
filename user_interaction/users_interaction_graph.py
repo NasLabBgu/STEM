@@ -1,5 +1,8 @@
 from typing import Dict, Union, Callable, List
 
+import pylab
+
+from stance_classification.maxcut import new_figure
 from user_interaction.user_interaction_parser import UsersInteraction
 
 import networkx as nx
@@ -7,6 +10,9 @@ import networkx as nx
 from matplotlib import pyplot as plt
 
 DEFAULT_WEIGHT = 1.0
+
+OP_COLOR = 'green'
+NODES_COLOR = 'lightblue'
 
 
 def get_one(*args, **kwargs): return DEFAULT_WEIGHT
@@ -47,29 +53,29 @@ def to_undirected_gaprh(graph: nx.DiGraph) -> nx.Graph:
     return graph
 
 
-def draw_user_interactions_graph(graph: nx.Graph, op: str = None, ax: plt.Axes = None, use_weight=False, outpath=None):
-    plt.figure(figsize=(21, 12))
+def draw_user_interactions_graph(graph: nx.Graph, op: str = None,
+                                 ax: plt.Axes = None, use_weight: bool = False,
+                                 outpath: str = None, title: str = None):
+    fig = new_figure()
     # draw graph with different edges weights:
     pos = nx.spring_layout(graph, seed=1919)
-    node_colors = ['b' if user != op else 'r' for user in graph.nodes]   # draw op node with different color
-    nx.draw_networkx_nodes(graph, pos, node_color=node_colors, ax=ax)
+    node_colors = [NODES_COLOR if user != op else OP_COLOR for user in graph.nodes]
+    nx.draw_networkx(graph, pos, node_color=node_colors)
+    if use_weight:
+        labels = {e: '{}'.format(graph[e[0]][e[1]]['weight']) for e in graph.edges}
+        nx.draw_networkx_edge_labels(graph, pos, edge_labels=labels)
 
-    nx.draw_networkx_labels(graph, pos)
+    if title is not None:
+        fig.suptitle(title, fontsize=16, y=0.97)
 
-    # draw edges with different width according to weight function
-    for u, v, edge_data in graph.edges(data=True):
-        weight = edge_data["weight"] if use_weight else 1
-        if weight > 1:
-            weight
-        nx.draw_networkx_edges(graph, pos, edgelist=[(u, v)], width=weight, ax=ax)
+    # Show the figure.
+    if outpath is not None:
+        pylab.savefig(outpath)
 
-    if outpath:
-        # manager = plt.get_current_fig_manager()
-        # # manager.resize(*manager.window.maxsize())
-        # manager.full_screen_toggle()
-        plt.savefig(outpath)
+    pylab.show()
 
-    plt.show()
+
+
 
 
 
