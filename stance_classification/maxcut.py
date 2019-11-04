@@ -112,7 +112,7 @@ def draw_maxcut(graph: nx.Graph, cut_nodes: set, relaxation_value: float, op: st
 
     ### Drawing the cut
     # Close the old figure and open a new one.
-    new_figure()
+    fig = new_figure()
     # Assign colors based on set membership.
 
 

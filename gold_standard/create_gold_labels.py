@@ -7,6 +7,7 @@ from community.community_utils import get_op_community
 from data_analyze import remove_irrelevant_users_interaction
 from graph_utils import remove_nodes_without_interactions, get_op_connected_component
 from stance_classification.maxcut import max_cut, draw_maxcut
+from stance_classification.random_stance_classifier import RandomStanceClassifier
 from user_interaction.user_interaction_parser import parse_users_interactions, UsersInteraction
 from user_interaction.users_interaction_graph import build_users_interaction_graph, draw_user_interactions_graph, \
     to_undirected_gaprh
@@ -41,8 +42,6 @@ def get_certain_labels(pair_labels: List[Dict[str, List[str]]]) -> List[str]:
 def show_labels(trees: Iterable[dict]):
 
     for i, tree in enumerate(trees):
-        if i == 1:
-            continue
         op = tree["node"]["author"]
         print(f"Tree: {i} ; OP: {op}")
         interactions = parse_users_interactions(tree)
@@ -66,7 +65,15 @@ def show_labels(trees: Iterable[dict]):
         op_connected_nodes = get_op_connected_component(undir_graph, op)
         # graph = graph.subgraph(op_connected_nodes)
         undir_graph = undir_graph.subgraph(op_connected_nodes)
-        draw_user_interactions_graph(undir_graph, op=op, use_weight=True, title=f"{tree['node']['title']}")
+
+        rsc = RandomStanceClassifier()
+        rsc.set_input(undir_graph)
+        rsc.classify_stance(op, 0.5)
+        rsc.draw()
+
+        title = tree['node']["extra_data"]['title']
+        # title = tree['node']['title']
+        draw_user_interactions_graph(undir_graph, op=op, use_weight=True, title=title)
 
         # communities = find_communities(graph)
         # graph = get_op_community(graph, communities, op)
@@ -85,7 +92,8 @@ def show_labels(trees: Iterable[dict]):
 
 if __name__ == "__main__":
 
-    labeled_trees_path = "/home/ron/data/bgu/labeled/labeled_trees.jsonl"
+    # labeled_trees_path = "/home/ron/data/bgu/labeled/labeled_trees.jsonl"
+    labeled_trees_path = "/home/ron/data/bgu/labeled/61019_notcut_trees.txt"
     trees = iter_trees_from_jsonl(labeled_trees_path)
     show_labels(trees)
 

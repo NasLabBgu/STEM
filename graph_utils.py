@@ -1,5 +1,7 @@
 from typing import Dict
 
+import pylab
+
 from user_interaction.user_interaction_parser import UsersInteraction
 
 import networkx as nx
