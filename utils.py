@@ -1,8 +1,9 @@
 
 import json
 import re
-from typing import List, Tuple
-
+from collections import deque
+from itertools import islice
+from typing import List, Tuple, Iterator, Iterable
 
 USER_MENTION_PATTERN = re.compile(r"/u/[\w-]+", re.UNICODE)  # https://github.com/reddit-archive/reddit/blob/master/r2/r2/lib/validator/validator.py#L1570
 QUOTE_PATTERN = re.compile(r"<quote>.*</quote>")
@@ -74,3 +75,13 @@ def is_source_of_quote(quote: str, text: str) -> bool:
             return True
 
     return False
+
+
+def skip_elements(it: Iterable, num_skip: int):
+    """
+    skip [num_skip] elements from iterator [it]
+    :param it:
+    :param num_skip:
+    :return:
+    """
+    deque(islice(it, num_skip))

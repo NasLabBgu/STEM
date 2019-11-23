@@ -2,7 +2,7 @@
 import argparse
 import json
 
-from typing import List, Iterable, Dict, Tuple, Callable
+from typing import List, Iterable, Dict, Tuple, Callable, Set
 
 import numpy as np
 import pandas as pd
@@ -17,37 +17,51 @@ from utils import iter_trees_from_jsonl
 IRRELEVANT_USERS = {None, "DeltaBot", "[deleted]"}
 
 
-def is_relevant_user(source_user, users_interactions: Dict[str, Dict[str, UsersInteraction]],
-                     op: str, min_op_interaction: int = 1, weight_func: Callable = None) -> bool:
-
+def is_relevant_user(source_user: str, op: str, source_users: Set[str], target_users: Set[str]) -> bool:
     if source_user in IRRELEVANT_USERS:
         return False
 
-    source_user_interactions = users_interactions[source_user]
-
-    if all(map(IRRELEVANT_USERS.__contains__, source_user_interactions.keys())):
+    irrelevant_users = IRRELEVANT_USERS | {source_user}
+    filtered_targets = target_users - irrelevant_users
+    filtered_sources = source_users - irrelevant_users
+    if len(filtered_targets) == 0:
         return False
 
-    if len(source_user_interactions) == 1 and op in users_interactions:
-        if weight_func is not None and op in source_user_interactions:
-            if weight_func(source_user_interactions[op]) < min_op_interaction:
-                if not any(map(lambda interact: source_user in interact, users_interactions.values())):
-                    return False
+    if len(filtered_sources) == 0:
+        return False
+
+    # check if the user replied only to the op and the op didn't replied back
+    if len(filtered_targets) == 1:
+        if (op in target_users) and (op not in source_users):
+            return False
 
     return True
 
 
-def remove_irrelevant_users_interaction(users_interactions: Dict[str, Dict[str, dict]], op: str, min_op_interact: int = 1, weight_func: Callable = None):
-    global IRRELEVANT_USERS
-    users_interactions = {
-        out_user: {in_user: d
-                   for in_user, d in in_users.items()
-                   if in_user not in IRRELEVANT_USERS
-                   }
-        for out_user, in_users in users_interactions.items()
-        if is_relevant_user(out_user, users_interactions, op, min_op_interact, weight_func)
-    }
-    return users_interactions
+def filter_interactions(users_interactions: Dict[str, Dict[str, dict]], op: str):
+
+    # build reversed interactions
+    reversed_interactions = {user: set() for user in users_interactions.keys()}
+    for source_user, interactions in users_interactions.items():
+        for target_user in interactions.keys():
+            sources = reversed_interactions.setdefault(target_user, set())
+            sources.add(source_user)
+
+    filtered_interactions = []
+    for out_user, interactions in users_interactions.items():
+        target_users = interactions.keys()
+        source_users = reversed_interactions[out_user]
+
+        if is_relevant_user(out_user, op, source_users, target_users):
+
+            filtered_user_interactions = \
+                {in_user: d for in_user, d in interactions.items()
+                       if in_user not in IRRELEVANT_USERS and in_user != out_user
+                 }
+
+            filtered_interactions.append((out_user, filtered_user_interactions))
+
+    return dict(filtered_interactions)
 
 
 def analyze_data(trees: Iterable[dict]):
@@ -61,7 +75,7 @@ def analyze_data(trees: Iterable[dict]):
         def calculate_edge_weight(edge_data: dict, edge: Tuple[str, str]) -> float:
             return edge_data["num_replies"] + edge_data["num_quotes"] + (edge_data["num_confirmed_delta_awards"] + edge_data["num_rejected_delta_awards"]) * 3
 
-        interactions = remove_irrelevant_users_interaction(interactions, op, min_op_interact=2, weight_func=calculate_edge_weight)
+        interactions = filter_interactions(interactions, op, min_op_interact=2, weight_func=calculate_edge_weight)
         graph = build_users_interaction_graph(interactions, weight_func=calculate_edge_weight)
 
         # draw_user_interactions_graph(graph, op=op, use_weight=True, outpath=f"/home/ron/workspace/bgu/stance-classification/examples/users-interactions-{i}-latest.png")
