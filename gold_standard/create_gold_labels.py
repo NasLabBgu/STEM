@@ -8,6 +8,7 @@ from data_analyze import filter_interactions
 from graph_utils import remove_nodes_without_interactions, get_op_connected_component
 from stance_classification.greedy_stance_classifier import MSTStanceClassifier
 from stance_classification.maxcut import max_cut, draw_maxcut
+from stance_classification.maxcut_stance_classifier import MaxcutStanceClassifier
 from stance_classification.random_stance_classifier import RandomStanceClassifier
 from user_interaction.user_interaction_parser import parse_users_interactions, UsersInteraction
 from user_interaction.users_interaction_graph import build_users_interaction_graph, draw_user_interactions_graph, \
@@ -64,7 +65,7 @@ def show_labels(trees: Iterable[dict]):
         remove_irrelevant_interactions = True
         show_digraph = False
         show_graph = True
-        compare_classifiers = False
+        compare_classifiers = True
         compute_communities = False
 
         if remove_irrelevant_interactions:
@@ -99,9 +100,11 @@ def show_labels(trees: Iterable[dict]):
             msc.classify_stance(op)
             msc.draw()
 
+            maxcut_clf = MaxcutStanceClassifier()
+            maxcut_clf.set_input(undir_graph)
             try:
-                rval, cut_nodes = max_cut(undir_graph)
-                draw_maxcut(undir_graph, cut_nodes, rval, op)
+                maxcut_clf.classify_stance(op)
+                maxcut_clf.draw()
             except OverflowError as e:
                 print(e)
 
