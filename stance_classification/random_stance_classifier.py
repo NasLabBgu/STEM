@@ -13,7 +13,7 @@ DEFAULT_RANDOM_SEED = 1919
 
 class RandomStanceClassifier(BaseStanceClassifier):
 
-    def __init__(self, random_seed: int = None):
+    def __init__(self, random_seed: int = None, support_prior: float = 0.5):
         self.initialized = False
         random_seed = DEFAULT_RANDOM_SEED if random_seed is None else random_seed
         self.random: Random = Random(random_seed)
@@ -21,7 +21,7 @@ class RandomStanceClassifier(BaseStanceClassifier):
         # input
         self.graph: nx.Graph = None
         self.op: str = None
-        self.support_prior: float = None
+        self.support_prior: float = support_prior
 
         # result
         self.cut: Set[Tuple[str, str]] = None
@@ -33,12 +33,14 @@ class RandomStanceClassifier(BaseStanceClassifier):
         self.graph = graph
         self.initialized = True
 
-    def classify_stance(self, op: str, support_prior: float = 0.5):
+    def classify_stance(self, op: str, support_prior: float = None):
         if not self.initialized:
             raise Exception("Class wasn't initialized properly before calling 'classify_stance' method")
 
         self.op = op
-        self.support_prior = support_prior
+        if support_prior is not None:
+            self.support_prior = support_prior
+
         is_supporter = partial(self.is_supporter, probability=self.support_prior)
         nodes_mask = [is_supporter() if n != self.op else True for n in self.graph.nodes]
         self.supporters = set()
@@ -50,6 +52,15 @@ class RandomStanceClassifier(BaseStanceClassifier):
 
     def is_supporter(self, probability: float) -> bool:
         return self.random.uniform(0, 1) < probability
+
+    def get_supporters(self) -> Set[str]:
+        return self.supporters
+
+    def get_complement(self) -> Set[str]:
+        return self.complement
+
+    def get_cut(self) -> Set[Tuple[str, str]]:
+        return self.cut
 
     def draw(self, layout_func: Callable = None, outpath: str = None):
         leave = [e for e in self.graph.edges if e not in self.cut]

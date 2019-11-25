@@ -44,6 +44,15 @@ class MSTStanceClassifier(BaseStanceClassifier):
         self.complement = opposers
         self.cut = get_cut_from_nodelist(set(self.graph.edges), set(self.supporters))
 
+    def get_supporters(self) -> Set[str]:
+        return self.supporters
+
+    def get_complement(self) -> Set[str]:
+        return self.complement
+
+    def get_cut(self) -> Set[Tuple[str, str]]:
+        return self.cut
+
     def clear(self):
         pass
 
