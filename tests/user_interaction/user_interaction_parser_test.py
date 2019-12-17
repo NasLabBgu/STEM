@@ -1,6 +1,6 @@
 import json
 
-from user_interaction.user_interaction_parser import parse_users_interactions
+from stance_classification.user_interaction.user_interaction_parser import parse_users_interactions
 
 
 def load_example_tree() -> dict:
