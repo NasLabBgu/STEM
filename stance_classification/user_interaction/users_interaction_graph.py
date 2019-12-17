@@ -4,8 +4,8 @@ import pylab
 # from networkx.drawing.nx_agraph import graphviz_layout
 from networkx.drawing.nx_pydot import graphviz_layout
 
-from stance_classification.maxcut import new_figure
-from user_interaction.user_interaction_parser import UsersInteraction
+from stance_classification.classifiers.maxcut import new_figure
+from stance_classification.user_interaction.user_interaction_parser import UsersInteraction
 
 import networkx as nx
 

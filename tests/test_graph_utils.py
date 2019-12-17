@@ -2,7 +2,7 @@ from unittest import TestCase
 
 import networkx as nx
 
-from graph_utils import count_all_triplets, calc_global_clustering_coefficient
+from stance_classification.graph_utils import count_all_triplets, calc_global_clustering_coefficient
 
 
 class TestGraphUtils(TestCase):

@@ -8,7 +8,7 @@ import random
 import numpy as np
 from operator import itemgetter
 
-from community.community_detection import edge_betweenness
+from stance_classification.community.community_detection import edge_betweenness
 
 
 def plot_betweeness(G, pos=None, source=None):

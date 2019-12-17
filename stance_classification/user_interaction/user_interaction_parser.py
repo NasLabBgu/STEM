@@ -2,8 +2,10 @@ from typing import Union, Dict, List, Iterable
 
 from dataclasses import dataclass, field as dataclass_field
 
+from stance_classification.utils import find_user_mentions, strip_mention_prefix, find_quotes, strip_quote_symbols, \
+    is_source_of_quote
+
 from treetools.TreeTools import walk_tree
-from utils import find_user_mentions, strip_mention_prefix, find_quotes, strip_quote_symbols, is_source_of_quote
 
 DELTA_BOT_USER = "DeltaBot"
 CONFIRMED_AWARD_PREFIX = "Confirmed:"

@@ -2,19 +2,19 @@ import json
 from operator import itemgetter
 from typing import Iterable, Tuple, List, Dict
 
-from community.community_detection import plot_partitions_score, spatial_bipartition, find_communities
-from community.community_utils import get_op_community
-from data_analyze import filter_interactions
-from graph_utils import remove_nodes_without_interactions, get_op_connected_component, inter_communication_index, \
+from stance_classification.community.community_detection import plot_partitions_score, spatial_bipartition, find_communities
+from stance_classification.community.community_utils import get_op_community
+from stance_classification.data_analyze import filter_interactions
+from stance_classification.graph_utils import remove_nodes_without_interactions, get_op_connected_component, inter_communication_index, \
     remove_nodes_with_low_interactions
-from stance_classification.greedy_stance_classifier import MSTStanceClassifier
-from stance_classification.maxcut import max_cut, draw_maxcut
-from stance_classification.maxcut_stance_classifier import MaxcutStanceClassifier
-from stance_classification.random_stance_classifier import RandomStanceClassifier
-from user_interaction.user_interaction_parser import parse_users_interactions, UsersInteraction
-from user_interaction.users_interaction_graph import build_users_interaction_graph, draw_user_interactions_graph, \
+from stance_classification.classifiers.greedy_stance_classifier import MSTStanceClassifier
+from stance_classification.classifiers.maxcut import max_cut, draw_maxcut
+from stance_classification.classifiers.maxcut_stance_classifier import MaxcutStanceClassifier
+from stance_classification.classifiers.random_stance_classifier import RandomStanceClassifier
+from stance_classification.user_interaction.user_interaction_parser import parse_users_interactions, UsersInteraction
+from stance_classification.user_interaction.users_interaction_graph import build_users_interaction_graph, draw_user_interactions_graph, \
     to_undirected_gaprh
-from utils import iter_trees_from_jsonl, skip_elements
+from stance_classification.utils import iter_trees_from_jsonl, skip_elements
 
 DISAGREEMENT_TAGS = {"CBE", "CBD", "CBF", "OCQ", "DNO"}   #CBB - ad hominem
 

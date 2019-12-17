@@ -4,12 +4,12 @@ from typing import Set, Tuple, Callable
 import pylab
 from networkx.algorithms import bipartite
 
-from draw_utils import OP_COLOR, SUPPORT_COLOR, new_figure, OPPOSE_COLOR
-from stance_classification.base_stance_classifier import BaseStanceClassifier
+from stance_classification.draw_utils import OP_COLOR, SUPPORT_COLOR, new_figure, OPPOSE_COLOR
+from stance_classification.classifiers.base_stance_classifier import BaseStanceClassifier
 import networkx as nx
 
-from stance_classification.maxcut import max_cut
-from stance_classification.stance_classification_utils import get_cut_from_nodelist
+from stance_classification.classifiers.maxcut import max_cut
+from stance_classification.classifiers.stance_classification_utils import get_cut_from_nodelist
 
 
 class MaxcutStanceClassifier(BaseStanceClassifier):

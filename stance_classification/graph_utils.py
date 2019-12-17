@@ -1,9 +1,10 @@
 from operator import itemgetter
 from typing import Dict
 
-from user_interaction.user_interaction_parser import UsersInteraction
 
 import networkx as nx
+
+from stance_classification.user_interaction.user_interaction_parser import UsersInteraction
 
 
 def remove_unconnected_interactions():

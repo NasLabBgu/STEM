@@ -4,12 +4,12 @@ import numpy as np
 import networkx as nx
 from sklearn.metrics import classification_report
 
-from stance_classification.base_stance_classifier import BaseStanceClassifier
-from stance_classification.graph_prepare import preprocess_from_tree
-from stance_classification.greedy_stance_classifier import MSTStanceClassifier
-from stance_classification.maxcut_stance_classifier import MaxcutStanceClassifier
-from stance_classification.random_stance_classifier import RandomStanceClassifier
-from stance_classification.stance_classification_utils import load_labels
+from classifiers.base_stance_classifier import BaseStanceClassifier
+from classifiers.graph_prepare import preprocess_from_tree
+from classifiers.greedy_stance_classifier import MSTStanceClassifier
+from classifiers.maxcut_stance_classifier import MaxcutStanceClassifier
+from classifiers.random_stance_classifier import RandomStanceClassifier
+from classifiers.stance_classification_utils import load_labels
 from utils import iter_trees_from_jsonl, skip_elements
 
 

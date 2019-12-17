@@ -7,11 +7,11 @@ from typing import List, Iterable, Dict, Tuple, Callable, Set
 import numpy as np
 import pandas as pd
 
-from stance_classification.maxcut import max_cut, draw_maxcut
-from user_interaction.user_interaction_parser import parse_users_interactions, UsersInteraction
-from user_interaction.users_interaction_graph import build_users_interaction_graph, draw_user_interactions_graph, \
+from stance_classification.classifiers.maxcut import max_cut, draw_maxcut
+from stance_classification.user_interaction.user_interaction_parser import parse_users_interactions, UsersInteraction
+from stance_classification.user_interaction.users_interaction_graph import build_users_interaction_graph, draw_user_interactions_graph, \
     to_undirected_gaprh
-from utils import iter_trees_from_jsonl
+from stance_classification.utils import iter_trees_from_jsonl
 
 
 IRRELEVANT_USERS = {None, "DeltaBot", "[deleted]"}
