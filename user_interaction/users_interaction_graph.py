@@ -1,6 +1,8 @@
 from typing import Dict, Union, Callable, List
 
 import pylab
+# from networkx.drawing.nx_agraph import graphviz_layout
+from networkx.drawing.nx_pydot import graphviz_layout
 
 from stance_classification.maxcut import new_figure
 from user_interaction.user_interaction_parser import UsersInteraction
@@ -20,7 +22,7 @@ def get_one(*args, **kwargs): return DEFAULT_WEIGHT
 
 def build_users_interaction_graph(users_interactions: Dict[str, Dict[str, UsersInteraction]],
                                   weight_func: Callable[[dict], float] = None
-                                  ) -> nx.Graph:
+                                  ) -> nx.DiGraph:
 
     if weight_func is None:
         weight_func = get_one
@@ -58,7 +60,8 @@ def draw_user_interactions_graph(graph: nx.Graph, op: str = None,
                                  outpath: str = None, title: str = None):
     fig = new_figure()
     # draw graph with different edges weights:
-    pos = nx.spring_layout(graph, seed=1919)
+    # pos = nx.spring_layout(graph, seed=1919)
+    pos = graphviz_layout(graph, prog='dot')
     node_colors = [NODES_COLOR if user != op else OP_COLOR for user in graph.nodes]
     nx.draw_networkx(graph, pos, node_color=node_colors)
     if use_weight:

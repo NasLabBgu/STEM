@@ -5,7 +5,8 @@ from typing import Iterable, Tuple, List, Dict
 from community.community_detection import plot_partitions_score, spatial_bipartition, find_communities
 from community.community_utils import get_op_community
 from data_analyze import filter_interactions
-from graph_utils import remove_nodes_without_interactions, get_op_connected_component
+from graph_utils import remove_nodes_without_interactions, get_op_connected_component, inter_communication_index, \
+    remove_nodes_with_low_interactions
 from stance_classification.greedy_stance_classifier import MSTStanceClassifier
 from stance_classification.maxcut import max_cut, draw_maxcut
 from stance_classification.maxcut_stance_classifier import MaxcutStanceClassifier
@@ -43,7 +44,7 @@ def get_certain_labels(pair_labels: List[Dict[str, List[str]]]) -> List[str]:
 
 def show_labels(trees: Iterable[dict]):
 
-    num_skip = 15
+    num_skip = 17
     skip_elements(trees, num_skip)
     for i, tree in enumerate(trees, num_skip):
         op = tree["node"]["author"]
@@ -65,7 +66,7 @@ def show_labels(trees: Iterable[dict]):
         remove_irrelevant_interactions = True
         show_digraph = False
         show_graph = True
-        compare_classifiers = True
+        compare_classifiers = False
         compute_communities = False
 
         if remove_irrelevant_interactions:
@@ -77,8 +78,18 @@ def show_labels(trees: Iterable[dict]):
         op_connected_nodes = get_op_connected_component(undir_graph, op)
         # graph = graph.subgraph(op_connected_nodes)
         undir_graph = undir_graph.subgraph(op_connected_nodes)
+        while min(map(itemgetter(1), undir_graph.degree)) < 2:
+            undir_graph = remove_nodes_with_low_interactions(undir_graph, 2)
+            if undir_graph.number_of_nodes() == 0:
+                break
+        if undir_graph.number_of_nodes() == 0:
+            continue
 
-        title = f"{tree['node']['id']}\n{tree['node']['extra_data']['title']}"
+        inter_communication_score = inter_communication_index(undir_graph)
+        title = f"{tree['node']['id']}" \
+                f"\n{tree['node']['extra_data']['title']}" \
+                f"\ninter-comm-index: {inter_communication_score}" \
+                f"\nnum nodes: {undir_graph.number_of_nodes()}"
         # title = tree['node']['title']
 
         if show_digraph:

@@ -1,8 +1,9 @@
 
 
 # Define a plotting helper that closes the old and opens a new figure.
+import networkx as nx
 import pylab
-
+from networkx.drawing.nx_agraph import graphviz_layout
 
 OP_COLOR = 'green'
 SUPPORT_COLOR = 'lightgreen'
@@ -21,3 +22,24 @@ def new_figure() -> pylab.Figure:
     fig.gca().axes.get_xaxis().set_ticks([])
     fig.gca().axes.get_yaxis().set_ticks([])
     return fig
+
+
+def draw_graph(graph: nx.Graph, graphviz=True, weight_field: str = "weight", path: str = None):
+
+    pylab.plt.figure(figsize=(20, 15))
+    if graphviz:
+        pos = graphviz_layout(graph, prog='fdp')
+    else:
+        pos = nx.spring_layout(graph, seed=1919)
+
+    edges_width = [max(edge[2][weight_field], 0.1) for edge in graph.edges(data=True)]
+    edges_transparency = [edge[2][weight_field] for edge in graph.edges(data=True)]
+    nx.draw_networkx_edges(graph, pos, width=edges_width, alpha=0.5)
+    nx.draw_networkx_nodes(graph, pos)
+    nx.draw_networkx_labels(graph, pos)
+    # nx.draw_networkx(graph, pos)
+
+    if path is not None:
+        pylab.plt.savefig(path)
+
+    pylab.plt.show()
