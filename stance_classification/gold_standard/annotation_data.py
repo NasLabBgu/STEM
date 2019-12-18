@@ -8,6 +8,7 @@ from treetools.TreeTools import walk_tree
 
 
 DELTA_BOT_USER = "DeltaBot"
+AUTO_MODERATOR_USER = "AutoModerator"
 
 NODE_FIELD = "node"
 ID_FIELD = "id"
@@ -52,7 +53,7 @@ def prepare_annotation_tasks_from_tree(tree: dict) -> Iterable[AnnotationTask]:
     current_branch_nodes: List[dict] = [first_node]  # Stores the previous nodes in the parsed branch
     current_branch_replies: List[Tuple[str, str]] = [(op, format_prev_text(op_text))]  # Stores the previous nodes in the parsed branch
 
-    tree_nodes = walk_tree(tree)
+    tree_nodes = walk_tree(tree, max_depth=6)
     next(tree_nodes)  # skip the first node
     for depth, node in tree_nodes:
         # check if the entire current branch was parsed, and start walking to the next branch
@@ -64,7 +65,9 @@ def prepare_annotation_tasks_from_tree(tree: dict) -> Iterable[AnnotationTask]:
         timestamp = node[TIMESTAMP_FIELD]
         current_author = node[AUTHOR_FIELD]
 
-        if current_author == DELTA_BOT_USER:
+        if current_author == DELTA_BOT_USER or current_author == AUTO_MODERATOR_USER:
+            continue
+        elif current_author == op:
             continue
         else:
             branch_rerplies = format_branch_replies(current_branch_replies)
