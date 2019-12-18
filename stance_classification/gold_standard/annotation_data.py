@@ -18,6 +18,8 @@ TIMESTAMP_FIELD = "timestamp"
 EXTRA_DATA_FIELD = "extra_data"
 TITLE_FIELD = "title"
 
+MAX_TEXT_LEN = 500
+
 
 class AnnotationTask(NamedTuple):
     node_id: str
@@ -25,7 +27,7 @@ class AnnotationTask(NamedTuple):
     title: str
     op: str
     op_text: str
-    prev_replies: List[Tuple[str, str]]
+    prev_replies: str #List[Tuple[str, str]]
     user_name: str
     current_reply: str
     reply_depth: int
@@ -48,7 +50,7 @@ def prepare_annotation_tasks_from_tree(tree: dict) -> Iterable[AnnotationTask]:
     op: str = first_node[AUTHOR_FIELD]
     op_text = first_node[TEXT_FIELD]
     current_branch_nodes: List[dict] = [first_node]  # Stores the previous nodes in the parsed branch
-    current_branch_replies: List[Tuple[str, str]] = [(op, first_node[TEXT_FIELD])]  # Stores the previous nodes in the parsed branch
+    current_branch_replies: List[Tuple[str, str]] = [(op, format_prev_text(op_text))]  # Stores the previous nodes in the parsed branch
 
     tree_nodes = walk_tree(tree)
     next(tree_nodes)  # skip the first node
@@ -65,20 +67,47 @@ def prepare_annotation_tasks_from_tree(tree: dict) -> Iterable[AnnotationTask]:
         if current_author == DELTA_BOT_USER:
             continue
         else:
+            branch_rerplies = format_branch_replies(current_branch_replies)
             task = AnnotationTask(node[ID_FIELD], tree_id, tree_title, op, op_text,
-                                  current_branch_replies,
+                                  branch_rerplies,
                                   current_author, text,
                                   depth, timestamp)
 
             yield task
 
         current_branch_nodes.append(node)
-        current_branch_replies.append((node[AUTHOR_FIELD], node[TEXT_FIELD]))
+        current_branch_replies.append((current_author, text))
+
+
+def format_prev_text(text: str):
+    global MAX_TEXT_LEN
+
+    if len(text) <= MAX_TEXT_LEN:
+        return text
+
+    splitted_text = text.split(" ")
+    last_token_index = 0
+    total_length = 0
+    for i, token in enumerate(splitted_text):
+        total_length += len(token)
+        if total_length >= MAX_TEXT_LEN:
+            last_token_index = i
+            break
+
+    shorter_text = " ".join(splitted_text[:last_token_index])
+    return shorter_text
+
+
+def format_branch_replies(branch_replies: List[Tuple[str, str]]) -> str:
+    branch_repr = "\n".join((f">>>{user}:\n{reply[:MAX_TEXT_LEN]}\n" for user, reply in branch_replies[:-1]))
+    last_user, last_reply = branch_replies[-1]
+    branch_repr += f"\n>>>{last_user}:\n{last_reply}"
+    return branch_repr
 
 
 def write_annotation_tasks(tasks: Iterable[AnnotationTask], path: str):
     with open(path, 'w') as f:
-        writer = csv.writer(f, lineterminator='\n')
+        writer = csv.writer(f, delimiter=',', escapechar='"', quoting=csv.QUOTE_ALL, lineterminator='\r\n')
 
         # write header
         header = AnnotationTask.get_fields()
@@ -86,7 +115,7 @@ def write_annotation_tasks(tasks: Iterable[AnnotationTask], path: str):
 
         for task in tasks:
             record = list(task)
-            record[5] = json.dumps(record[5])
+            record[5] = record[5]
             writer.writerow(record)
 
 
