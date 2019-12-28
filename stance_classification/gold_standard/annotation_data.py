@@ -1,6 +1,9 @@
 import csv
 import json
 import sys
+from collections import Counter
+from itertools import islice
+from random import shuffle
 from typing import Iterable, Tuple, NamedTuple, List
 
 from stance_classification.utils import iter_trees_from_jsonl
@@ -20,6 +23,7 @@ EXTRA_DATA_FIELD = "extra_data"
 TITLE_FIELD = "title"
 
 MAX_TEXT_LEN = 500
+MAX_REPLIES_PER_USER = 5
 
 
 class AnnotationTask(NamedTuple):
@@ -51,8 +55,9 @@ def prepare_annotation_tasks_from_tree(tree: dict) -> Iterable[AnnotationTask]:
     op: str = first_node[AUTHOR_FIELD]
     op_text = first_node[TEXT_FIELD]
     current_branch_nodes: List[dict] = [first_node]  # Stores the previous nodes in the parsed branch
-    current_branch_replies: List[Tuple[str, str]] = [(op, format_prev_text(op_text))]  # Stores the previous nodes in the parsed branch
+    current_branch_replies: List[Tuple[str, str]] = [(op, op_text)]  # Stores the previous nodes in the parsed branch
 
+    users_replies_count = Counter()
     tree_nodes = walk_tree(tree, max_depth=6)
     next(tree_nodes)  # skip the first node
     for depth, node in tree_nodes:
@@ -65,21 +70,28 @@ def prepare_annotation_tasks_from_tree(tree: dict) -> Iterable[AnnotationTask]:
         timestamp = node[TIMESTAMP_FIELD]
         current_author = node[AUTHOR_FIELD]
 
+        task = None
         if current_author == DELTA_BOT_USER or current_author == AUTO_MODERATOR_USER:
-            continue
+            pass
         elif current_author == op:
-            continue
+            pass
+        elif users_replies_count[current_author] == MAX_REPLIES_PER_USER:
+            pass
         else:
-            branch_rerplies = format_branch_replies(current_branch_replies)
-            task = AnnotationTask(node[ID_FIELD], tree_id, tree_title, op, op_text,
+            branch_rerplies = format_branch_replies(current_branch_replies[1:][-3:])
+            # current_reply = f"Author:: {current_author}\n{text}"
+            task = AnnotationTask(node[ID_FIELD], tree_id, tree_title, op,
+                                  format_prev_text(op_text),
                                   branch_rerplies,
                                   current_author, text,
                                   depth, timestamp)
 
-            yield task
-
+        users_replies_count.update([current_author])
         current_branch_nodes.append(node)
         current_branch_replies.append((current_author, text))
+
+        if task is not None:
+            yield task
 
 
 def format_prev_text(text: str):
@@ -92,19 +104,19 @@ def format_prev_text(text: str):
     last_token_index = 0
     total_length = 0
     for i, token in enumerate(splitted_text):
-        total_length += len(token)
+        total_length += len(token) + 1
         if total_length >= MAX_TEXT_LEN:
             last_token_index = i
             break
 
-    shorter_text = " ".join(splitted_text[:last_token_index])
+    shorter_text = " ".join(splitted_text[:last_token_index]) + " ... "
     return shorter_text
 
 
 def format_branch_replies(branch_replies: List[Tuple[str, str]]) -> str:
-    branch_repr = "\n".join((f">>>{user}:\n{reply[:MAX_TEXT_LEN]}\n" for user, reply in branch_replies[:-1]))
-    last_user, last_reply = branch_replies[-1]
-    branch_repr += f"\n>>>{last_user}:\n{last_reply}"
+    branch_repr = "\n".join((f"Author:: {user}:\n{format_prev_text(reply)}\n" for user, reply in branch_replies))
+    # last_user, last_reply = branch_replies[-1]
+    # branch_repr += f"\n>>>{last_user}:\n{last_reply}"
     return branch_repr
 
 
@@ -127,6 +139,7 @@ if __name__ == "__main__":
     labeled_trees_path = sys.argv[1]    # "/home/ron/data/bgu/labeled/61019_notcut_trees.txt"
     outpath = sys.argv[2]    # "/home/ron/data/bgu/stance_annotation/tasks_v1.0.0.csv"
 
-    trees = iter_trees(labeled_trees_path)
-    tasks = (task for tree in trees for task in prepare_annotation_tasks_from_tree(tree))
-    write_annotation_tasks(tasks, outpath)
+    trees = islice(iter_trees(labeled_trees_path), 1)
+    tasks = list((task for tree in trees for task in prepare_annotation_tasks_from_tree(tree)))
+    shuffle(tasks)
+    write_annotation_tasks(tasks[:20], outpath)
