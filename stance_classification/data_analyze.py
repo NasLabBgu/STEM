@@ -14,54 +14,7 @@ from stance_classification.user_interaction.users_interaction_graph import build
 from stance_classification.utils import iter_trees_from_jsonl
 
 
-IRRELEVANT_USERS = {None, "DeltaBot", "[deleted]"}
 
-
-def is_relevant_user(source_user: str, op: str, source_users: Set[str], target_users: Set[str]) -> bool:
-    if source_user in IRRELEVANT_USERS:
-        return False
-
-    irrelevant_users = IRRELEVANT_USERS | {source_user}
-    filtered_targets = target_users - irrelevant_users
-    filtered_sources = source_users - irrelevant_users
-    if len(filtered_targets) == 0:
-        return False
-
-    if len(filtered_sources) == 0:
-        return False
-
-    # check if the user replied only to the op and the op didn't replied back
-    if len(filtered_targets) == 1:
-        if (op in target_users) and (op not in source_users):
-            return False
-
-    return True
-
-
-def filter_interactions(users_interactions: Dict[str, Dict[str, dict]], op: str):
-
-    # build reversed interactions
-    reversed_interactions = {user: set() for user in users_interactions.keys()}
-    for source_user, interactions in users_interactions.items():
-        for target_user in interactions.keys():
-            sources = reversed_interactions.setdefault(target_user, set())
-            sources.add(source_user)
-
-    filtered_interactions = []
-    for out_user, interactions in users_interactions.items():
-        target_users = interactions.keys()
-        source_users = reversed_interactions[out_user]
-
-        if is_relevant_user(out_user, op, source_users, target_users):
-
-            filtered_user_interactions = \
-                {in_user: d for in_user, d in interactions.items()
-                       if in_user not in IRRELEVANT_USERS and in_user != out_user
-                 }
-
-            filtered_interactions.append((out_user, filtered_user_interactions))
-
-    return dict(filtered_interactions)
 
 
 def analyze_data(trees: Iterable[dict]):

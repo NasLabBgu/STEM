@@ -1,4 +1,4 @@
-from typing import Union, Dict, List, Iterable
+from typing import Union, Dict, List, Iterable, Any, Set
 
 from dataclasses import dataclass, field as dataclass_field
 
@@ -55,7 +55,7 @@ def parse_users_interactions(tree: dict) -> Dict[str, Dict[str, UsersInteraction
             del current_branch_nodes[depth:]
 
         text = node[TEXT_FIELD]
-        timestamp = 0# node[TIMESTAMP_FIELD]
+        timestamp = 0 # node[TIMESTAMP_FIELD]
         current_author = node[AUTHOR_FIELD]
         author_interactions = interactions.setdefault(current_author, {})
 
@@ -260,6 +260,64 @@ def add_labels(current_node: dict, parent_author: str, author_interactions: Dict
     pair_interaction = author_interactions.setdefault(parent_author, UsersInteraction())
     pair_interaction.labels.append(labels)
     return True
+
+
+# interaction weight functions
+def cmv_interaction_weight(u: Any, v: Any, data: dict) -> float:
+    return data["num_replies"] + data["num_quotes"] + (
+                data["num_confirmed_delta_awards"] + data["num_rejected_delta_awards"]) * 3
+
+
+IRRELEVANT_USERS = {None, "DeltaBot", "[deleted]"}
+
+
+def is_relevant_user(source_user: str, op: str, source_users: Set[str], target_users: Set[str]) -> bool:
+    if source_user in IRRELEVANT_USERS:
+        return False
+
+    irrelevant_users = IRRELEVANT_USERS | {source_user}
+    filtered_targets = target_users - irrelevant_users
+    filtered_sources = source_users - irrelevant_users
+    if len(filtered_targets) == 0:
+        return False
+
+    if len(filtered_sources) == 0:
+        return False
+
+    # check if the user replied only to the op and the op didn't replied back
+    if len(filtered_targets) == 1:
+        if (op in target_users) and (op not in source_users):
+            return False
+
+    return True
+
+
+def filter_interactions(users_interactions: Dict[str, Dict[str, UsersInteraction]], op: str):
+
+    # build reversed interactions
+    reversed_interactions = {user: set() for user in users_interactions.keys()}
+    for source_user, interactions in users_interactions.items():
+        for target_user in interactions.keys():
+            sources = reversed_interactions.setdefault(target_user, set())
+            sources.add(source_user)
+
+    filtered_interactions = []
+    for out_user, interactions in users_interactions.items():
+        target_users = interactions.keys()
+        source_users = reversed_interactions[out_user]
+
+        if is_relevant_user(out_user, op, source_users, target_users):
+
+            filtered_user_interactions = \
+                {in_user: d for in_user, d in interactions.items()
+                       if in_user not in IRRELEVANT_USERS and in_user != out_user
+                 }
+
+            filtered_interactions.append((out_user, filtered_user_interactions))
+
+    return dict(filtered_interactions)
+
+
 
 
 

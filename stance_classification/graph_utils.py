@@ -1,10 +1,19 @@
+from collections import Counter
 from operator import itemgetter
-from typing import Dict
-
+from typing import Dict, List
 
 import networkx as nx
 
 from stance_classification.user_interaction.user_interaction_parser import UsersInteraction
+
+# tree dict fields
+from treetools.TreeTools import walk_tree
+
+NODE_FIELD = "node"
+AUTHOR_FIELD = "author"
+TEXT_FIELD = "text"
+TIMESTAMP_FIELD = "timestamp"
+LABELS_FIELD = "labels"
 
 
 def remove_unconnected_interactions():
@@ -65,5 +74,41 @@ def inter_communication_index(graph: nx.Graph) -> float:
     triplets_dominance = float(count_all_triplets(graph)) / graph.number_of_nodes()
     # high_degree_ratio = float(len(high_degree_nodes)) / graph.number_of_nodes()
     return triplets_dominance * avg_deg
+
+
+def get_node_name(counter: Counter, author: str) -> str:
+    counter[author] += 1
+    return f"{author}-{counter[author]}"
+
+
+def tree_to_graph(tree: dict) -> nx.Graph:
+    first_node = tree[NODE_FIELD]
+    op: str = first_node[AUTHOR_FIELD]
+    authors_counts = Counter()
+    current_branch_authors: List[str] = []
+
+    tree_graph = nx.Graph()
+    node_name = get_node_name(authors_counts, op)
+    tree_graph.add_node(node_name, **first_node)
+    current_branch_authors.append(node_name)
+
+
+    tree_nodes = walk_tree(tree)
+    next(tree_nodes)  # skip the first node
+    for depth, node in tree_nodes:
+        # check if the entire current branch was parsed, and start walking to the next branch
+        if depth < len(current_branch_authors):
+            del current_branch_authors[depth:]
+
+        current_author = node[AUTHOR_FIELD]
+        node_name = get_node_name(authors_counts, current_author)
+        tree_graph.add_node(node_name, **node)
+
+        prev_author = current_branch_authors[-1]
+        tree_graph.add_edge(prev_author, node_name)
+
+        current_branch_authors.append(node_name)
+
+    return tree_graph
 
 

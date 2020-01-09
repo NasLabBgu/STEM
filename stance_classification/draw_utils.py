@@ -1,9 +1,13 @@
 
 
 # Define a plotting helper that closes the old and opens a new figure.
+from typing import Dict, List
+
 import networkx as nx
 import pylab
 from networkx.drawing.nx_agraph import graphviz_layout
+
+from treetools.TreeTools import walk_tree
 
 OP_COLOR = 'green'
 SUPPORT_COLOR = 'lightgreen'
@@ -43,3 +47,22 @@ def draw_graph(graph: nx.Graph, graphviz=True, weight_field: str = "weight", pat
         pylab.plt.savefig(path)
 
     pylab.plt.show()
+
+
+def draw_tree(tree: nx.Graph, path: str = None):
+    pylab.plt.figure(figsize=(20, 15))
+    pos = nx.nx_pydot.graphviz_layout(tree, prog='dot')
+
+    nx.draw_networkx_edges(tree, pos)
+    nx.draw_networkx_nodes(tree, pos)
+    nx.draw_networkx_labels(tree, pos)
+    # nx.draw_networkx(graph, pos)
+
+    if path is not None:
+        pylab.plt.savefig(path)
+
+    pylab.plt.show()
+
+
+
+
