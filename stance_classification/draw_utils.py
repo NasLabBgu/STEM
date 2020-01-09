@@ -22,7 +22,7 @@ def new_figure() -> pylab.Figure:
         pylab.close(fig)
     except NameError:
         pass
-    fig = pylab.figure(figsize=(20, 15))
+    fig = pylab.figure(figsize=(20, 20), dpi=200)
     fig.gca().axes.get_xaxis().set_ticks([])
     fig.gca().axes.get_yaxis().set_ticks([])
     return fig
@@ -49,17 +49,21 @@ def draw_graph(graph: nx.Graph, graphviz=True, weight_field: str = "weight", pat
     pylab.plt.show()
 
 
-def draw_tree(tree: nx.Graph, path: str = None):
-    pylab.plt.figure(figsize=(20, 15))
+def draw_tree(tree: nx.Graph, path: str = None, title: str = None):
+    pylab.plt.figure(figsize=(20, 20), dpi=200)
     pos = nx.nx_pydot.graphviz_layout(tree, prog='dot')
 
     nx.draw_networkx_edges(tree, pos)
-    nx.draw_networkx_nodes(tree, pos)
-    nx.draw_networkx_labels(tree, pos)
+    nx.draw_networkx_nodes(tree, pos, node_color="lightgray")
+    labels = {u: u.split("-")[0] for u in tree.nodes}
+    nx.draw_networkx_labels(tree, pos, labels=labels)
     # nx.draw_networkx(graph, pos)
 
     if path is not None:
         pylab.plt.savefig(path)
+
+    if title is not None:
+        pylab.plt.title(title)
 
     pylab.plt.show()
 

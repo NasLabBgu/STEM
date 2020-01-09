@@ -43,9 +43,15 @@ def parse_users_interactions(tree: dict) -> Dict[str, Dict[str, UsersInteraction
     """
     # get OP and the first node of the conversation and initialize variables
     first_node = tree[NODE_FIELD]
+    first_node[AUTHOR_FIELD] = "user0"
     op: str = first_node[AUTHOR_FIELD]
     interactions: Dict[str, Dict[str, UsersInteraction]] = {op: {}}
     current_branch_nodes: List[dict] = [first_node]     # Stores the previous nodes in the parsed branch
+
+    users_index = {}
+
+    user_index = users_index.setdefault(op, len(users_index))
+    op = f"user{user_index}"
 
     tree_nodes = walk_tree(tree)
     next(tree_nodes)    # skip the first node
@@ -57,6 +63,9 @@ def parse_users_interactions(tree: dict) -> Dict[str, Dict[str, UsersInteraction
         text = node[TEXT_FIELD]
         timestamp = 0 # node[TIMESTAMP_FIELD]
         current_author = node[AUTHOR_FIELD]
+        user_index = users_index.setdefault(current_author, len(users_index))
+        current_author = f"user{user_index}"
+        node[AUTHOR_FIELD] = current_author
         author_interactions = interactions.setdefault(current_author, {})
 
         # Check if deltabot awarded a delta

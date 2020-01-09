@@ -156,7 +156,7 @@ def new_figure() -> pylab.Figure:
         pylab.close(fig)
     except NameError:
         pass
-    fig = pylab.figure(figsize=(20, 15))
+    fig = pylab.figure(figsize=(20, 20), dpi=100)
     fig.gca().axes.get_xaxis().set_ticks([])
     fig.gca().axes.get_yaxis().set_ticks([])
     return fig

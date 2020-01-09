@@ -47,15 +47,12 @@ def get_certain_labels(pair_labels: List[Dict[str, List[str]]]) -> List[str]:
 
 def show_labels(trees: Iterable[dict]):
 
-    num_skip = 0
+    num_skip = 15
     skip_elements(trees, num_skip)
     for i, tree in enumerate(trees, num_skip):
         op = tree["node"]["author"]
         if op == "[deleted]":
             continue
-
-        tree_graph = tree_to_graph(tree)
-        draw_tree(tree_graph, path="/home/ron/workspace/bgu/stance-classification/plots/tree.png")
 
         print(f"Tree: {i} ; OP: {op} ; Title: {tree['node']['extra_data']['title']}")
         interactions = parse_users_interactions(tree)
@@ -66,14 +63,34 @@ def show_labels(trees: Iterable[dict]):
                 # print(f"{user1} --> {user2} : {certain_pair_labels}")
 
         # remove_irrelevant_interactions = True
+        anonimous = True
         show_digraph = False
         show_graph = True
         compare_classifiers = False
         compute_communities = False
 
-        undir_graph = get_core_interactions(interactions, op)
+        if anonimous:
+            op = "user0"
+
+        undir_graph = get_core_interactions(interactions, op, k_core=1)
         if undir_graph.number_of_nodes() == 0:
             continue
+
+        core_nodes = nx.k_core(undir_graph, 2).nodes
+        tree_graph = tree_to_graph(tree)
+        tree_nodes = [n for n in tree_graph.nodes if n.split("-")[0] in core_nodes]
+        sub_tree_graph = tree_graph.subgraph(tree_nodes)
+        sub_tree_graph = nx.k_core(sub_tree_graph, 1)
+
+        relevant_nodes = [comp for comp in nx.connected_components(sub_tree_graph.to_undirected()) if f"{op}-1" in comp][0]
+        sub_tree_graph = sub_tree_graph.subgraph(relevant_nodes)
+        tree_title = tree['node']['extra_data']['title']
+        try:
+            draw_tree(sub_tree_graph,
+                  path=f"/home/ron/workspace/bgu/stance-classification/plots/tree-{i}-limited-users.png",
+                      title=tree_title)
+        except:
+            pass
 
         inter_communication_score = inter_communication_index(undir_graph)
         title = f"{tree['node']['id']}" \

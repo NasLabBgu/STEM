@@ -86,12 +86,15 @@ def tree_to_graph(tree: dict) -> nx.Graph:
     op: str = first_node[AUTHOR_FIELD]
     authors_counts = Counter()
     current_branch_authors: List[str] = []
+    users_index = {}
 
-    tree_graph = nx.Graph()
-    node_name = get_node_name(authors_counts, op)
+    user_index = users_index.setdefault(op, len(users_index))
+    new_op_name = f"user{user_index}"
+    node_name = get_node_name(authors_counts, new_op_name)
+
+    tree_graph = nx.OrderedDiGraph()
     tree_graph.add_node(node_name, **first_node)
     current_branch_authors.append(node_name)
-
 
     tree_nodes = walk_tree(tree)
     next(tree_nodes)  # skip the first node
@@ -101,7 +104,10 @@ def tree_to_graph(tree: dict) -> nx.Graph:
             del current_branch_authors[depth:]
 
         current_author = node[AUTHOR_FIELD]
-        node_name = get_node_name(authors_counts, current_author)
+        user_index = users_index.setdefault(current_author, len(users_index))
+        new_user_name = f"user{user_index}"
+
+        node_name = get_node_name(authors_counts, new_user_name)
         tree_graph.add_node(node_name, **node)
 
         prev_author = current_branch_authors[-1]
