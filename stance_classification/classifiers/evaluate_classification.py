@@ -4,13 +4,13 @@ import numpy as np
 import networkx as nx
 from sklearn.metrics import classification_report
 
-from classifiers.base_stance_classifier import BaseStanceClassifier
-from classifiers.graph_prepare import preprocess_from_tree
-from classifiers.greedy_stance_classifier import MSTStanceClassifier
-from classifiers.maxcut_stance_classifier import MaxcutStanceClassifier
-from classifiers.random_stance_classifier import RandomStanceClassifier
-from classifiers.stance_classification_utils import load_labels
-from utils import iter_trees_from_jsonl, skip_elements
+from stance_classification.classifiers.base_stance_classifier import BaseStanceClassifier
+from stance_classification.classifiers.graph_prepare import preprocess_from_tree
+from stance_classification.classifiers.greedy_stance_classifier import MSTStanceClassifier
+from stance_classification.classifiers.maxcut_stance_classifier import MaxcutStanceClassifier
+from stance_classification.classifiers.random_stance_classifier import RandomStanceClassifier
+from stance_classification.classifiers.stance_classification_utils import load_labels
+from stance_classification.utils import skip_elements, iter_trees_from_jsonl
 
 
 def get_confusion_matrix(y_true: Sequence[bool], y_pred: Sequence[bool]) -> Tuple[int, int, int, int]:

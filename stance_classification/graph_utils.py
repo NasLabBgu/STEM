@@ -76,21 +76,23 @@ def inter_communication_index(graph: nx.Graph) -> float:
     return triplets_dominance * avg_deg
 
 
-def get_node_name(counter: Counter, author: str) -> str:
+def get_node_name(counter: Counter, author: str, anonimous_index: dict = None) -> str:
+    if anonimous_index is not None:
+        user_index = anonimous_index.setdefault(author, len(anonimous_index))
+        author = f"user{user_index}"
+
     counter[author] += 1
     return f"{author}-{counter[author]}"
 
 
-def tree_to_graph(tree: dict) -> nx.Graph:
+def tree_to_graph(tree: dict, anonimous: bool = False) -> nx.Graph:
     first_node = tree[NODE_FIELD]
     op: str = first_node[AUTHOR_FIELD]
     authors_counts = Counter()
+    anonimous_index = {} if anonimous else None
     current_branch_authors: List[str] = []
-    users_index = {}
 
-    user_index = users_index.setdefault(op, len(users_index))
-    new_op_name = f"user{user_index}"
-    node_name = get_node_name(authors_counts, new_op_name)
+    node_name = get_node_name(authors_counts, op, anonimous_index)
 
     tree_graph = nx.OrderedDiGraph()
     tree_graph.add_node(node_name, **first_node)
@@ -104,10 +106,7 @@ def tree_to_graph(tree: dict) -> nx.Graph:
             del current_branch_authors[depth:]
 
         current_author = node[AUTHOR_FIELD]
-        user_index = users_index.setdefault(current_author, len(users_index))
-        new_user_name = f"user{user_index}"
-
-        node_name = get_node_name(authors_counts, new_user_name)
+        node_name = get_node_name(authors_counts, current_author, anonimous_index)
         tree_graph.add_node(node_name, **node)
 
         prev_author = current_branch_authors[-1]

@@ -47,7 +47,16 @@ def get_certain_labels(pair_labels: List[Dict[str, List[str]]]) -> List[str]:
 
 def show_labels(trees: Iterable[dict]):
 
-    num_skip = 15
+    ## Flags
+    # remove_irrelevant_interactions = True
+    anonimous = False
+    parse_tree = False
+    show_digraph = False
+    show_graph = False
+    compare_classifiers = True
+    compute_communities = False
+
+    num_skip = 4
     skip_elements(trees, num_skip)
     for i, tree in enumerate(trees, num_skip):
         op = tree["node"]["author"]
@@ -55,42 +64,42 @@ def show_labels(trees: Iterable[dict]):
             continue
 
         print(f"Tree: {i} ; OP: {op} ; Title: {tree['node']['extra_data']['title']}")
-        interactions = parse_users_interactions(tree)
+        interactions = parse_users_interactions(tree, anonimous=anonimous)
         pairs_labels = extract_labeled_pairs(interactions)
         for user1, user2, all_pair_labels in pairs_labels:
             if len(pairs_labels) > 0:
                 certain_pair_labels = get_certain_labels(all_pair_labels)
                 # print(f"{user1} --> {user2} : {certain_pair_labels}")
 
-        # remove_irrelevant_interactions = True
-        anonimous = True
-        show_digraph = False
-        show_graph = True
-        compare_classifiers = False
-        compute_communities = False
-
         if anonimous:
             op = "user0"
 
-        undir_graph = get_core_interactions(interactions, op, k_core=1)
-        if undir_graph.number_of_nodes() == 0:
-            continue
+        if parse_tree:
+            undir_graph = get_core_interactions(interactions, op, k_core=1)
+            core_nodes = nx.k_core(undir_graph, 2).nodes
+            if len(core_nodes) == 0:
+                continue
 
-        core_nodes = nx.k_core(undir_graph, 2).nodes
-        tree_graph = tree_to_graph(tree)
-        tree_nodes = [n for n in tree_graph.nodes if n.split("-")[0] in core_nodes]
-        sub_tree_graph = tree_graph.subgraph(tree_nodes)
-        sub_tree_graph = nx.k_core(sub_tree_graph, 1)
+            tree_graph = tree_to_graph(tree, anonimous=False)
+            tree_nodes = [n for n in tree_graph.nodes if n.split("-")[0] in core_nodes]
+            sub_tree_graph = tree_graph.subgraph(tree_nodes)
+            sub_tree_graph = nx.k_core(sub_tree_graph, 1)
 
-        relevant_nodes = [comp for comp in nx.connected_components(sub_tree_graph.to_undirected()) if f"{op}-1" in comp][0]
-        sub_tree_graph = sub_tree_graph.subgraph(relevant_nodes)
-        tree_title = tree['node']['extra_data']['title']
-        try:
-            draw_tree(sub_tree_graph,
-                  path=f"/home/ron/workspace/bgu/stance-classification/plots/tree-{i}-limited-users.png",
-                      title=tree_title)
-        except:
-            pass
+            op_root_name = f"{op}-1"
+            relevant_nodes = [comp for comp in nx.connected_components(sub_tree_graph.to_undirected()) if op_root_name in comp][0]
+            sub_tree_graph = sub_tree_graph.subgraph(relevant_nodes)
+            tree_title = tree['node']['extra_data']['title']
+            try:
+                draw_tree(sub_tree_graph,
+                      path=f"/home/ron/workspace/bgu/stance-classification/plots/tree-{i}-limited-users.png",
+                          title=tree_title)
+            except:
+                pass
+
+        else:
+            undir_graph = get_core_interactions(interactions, op, k_core=1)
+            if undir_graph.number_of_nodes() == 0:
+                continue
 
         inter_communication_score = inter_communication_index(undir_graph)
         title = f"{tree['node']['id']}" \
@@ -111,30 +120,26 @@ def show_labels(trees: Iterable[dict]):
             rsc = RandomStanceClassifier()
             rsc.set_input(undir_graph)
             rsc.classify_stance(op, 1./3)
-            rsc.draw()
+            if show_graph:
+                rsc.draw()
 
             msc = MSTStanceClassifier()
             msc.set_input(undir_graph)
             msc.classify_stance(op)
-            msc.draw()
+            if show_graph:
+                msc.draw()
 
             maxcut_clf = MaxcutStanceClassifier()
             maxcut_clf.set_input(undir_graph)
             try:
                 maxcut_clf.classify_stance(op)
-                maxcut_clf.draw()
+                if show_graph:
+                    maxcut_clf.draw()
+
+
+
             except OverflowError as e:
                 print(e)
-
-        if compute_communities:
-            communities = find_communities(graph)
-            graph = get_op_community(graph, communities, op)
-            # plot_betweeness(graph)
-            # find_best_partition(graph)
-            draw_user_interactions_graph(graph, op=op, use_weight=True)
-            undir_graph = to_undirected_gaprh(graph)
-            spatial_bipartition(undir_graph)
-
 
 
 if __name__ == "__main__":

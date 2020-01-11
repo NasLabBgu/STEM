@@ -1,17 +1,33 @@
-from typing import Dict, Tuple
+import os
+from typing import Dict, Tuple, Sequence
 
 import picos as pic
+
+from picos.expressions import Variable, AffinExp
+from picos.problem import Problem
 import cvxopt as cvx
 import cvxopt.lapack
+from cvxopt.base import matrix as cvx_matrix
 
 import networkx as nx
 import numpy as np
+import pandas as pd
 import pylab
 
 
 OP_COLOR = 'green'
 SUPPORT_COLOR = 'lightgreen'
 OPPOSE_COLOR = 'lightblue'
+
+EMBEDDINGS_OUT_DIR = "/home/ron/workspace/bgu/stance-classification/outputs/maxcut-embeddings"
+
+
+def output_vertex_embedding(graph: nx.Graph, embeddings: cvx_matrix):
+    embeddings_df = pd.DataFrame(np.asarray(embeddings))
+    embeddings_df.insert(0, "username", list(graph.nodes()))
+    num_files = len(os.listdir(EMBEDDINGS_OUT_DIR))
+    outpath = os.path.join(EMBEDDINGS_OUT_DIR, f"tree{num_files + 1}-maxcut-embeddings.csv")
+    embeddings_df.to_csv(outpath, index=False)
 
 
 def solve_maxcut(G: nx.Graph):
@@ -50,7 +66,7 @@ def solve_maxcut(G: nx.Graph):
     return G, X, L, num_nodes, maxcut
 
 
-def find_relaxation(G, X, L, num_nodes, maxcut) -> Tuple[float, set]:
+def find_relaxation(G: nx.Graph, X: Variable, L: AffinExp, num_nodes: int, maxcut: Problem) -> Tuple[float, set]:
     """
     :param X: Positive Semidefinite matrix
     :param L:  Laplacian matix of the graph
@@ -68,6 +84,8 @@ def find_relaxation(G, X, L, num_nodes, maxcut) -> Tuple[float, set]:
     for i in range(num_nodes):
         for j in range(i + 1, num_nodes):
             V[i, j] = 0
+
+    output_vertex_embedding(G, V)
 
     # Do up to 100 projections. Stop if we are within a factor 0.878 of the SDP
     # optimal value.
