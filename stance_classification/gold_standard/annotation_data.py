@@ -3,9 +3,11 @@ import json
 import re
 import sys
 from collections import Counter, deque
-from itertools import islice
+from functools import partial
+from itertools import islice, takewhile
+from operator import itemgetter
 from random import shuffle
-from typing import Iterable, Tuple, NamedTuple, List
+from typing import Iterable, Tuple, NamedTuple, List, Set
 
 from stance_classification.user_interaction.user_interaction_parser import parse_users_interactions
 from stance_classification.user_interaction.users_interaction_graph import get_core_interactions
@@ -25,11 +27,15 @@ TIMESTAMP_FIELD = "timestamp"
 EXTRA_DATA_FIELD = "extra_data"
 TITLE_FIELD = "title"
 
-MAX_TEXT_LEN = 500
-MAX_REPLIES_PER_USER = 3
+MAX_TEXT_LEN = 1000
+MAX_DISPLAY_TEXT_LEN = 500
+MAX_REPLIES_PER_USER = 5
+MAX_DEPTH = 3
 MAX_TITLE_LENGTH = 120
 MAX_QUOTES = 1
 MAX_QUOTE_PORTION = 0.5
+
+MIN_CORE_SIZE = 7
 
 QUOTE_TAGS_SIZE = len("<quote></quote>")
 
@@ -71,7 +77,7 @@ def prepare_annotation_tasks_from_tree(tree: dict) -> Iterable[AnnotationTask]:
     current_branch_replies: List[Tuple[str, str]] = [(op, op_text)]  # Stores the previous nodes in the parsed branch
 
     users_replies_count = Counter()
-    tree_nodes = walk_tree(tree, max_depth=6)
+    tree_nodes = walk_tree(tree, max_depth=MAX_DEPTH + 1)
     next(tree_nodes)  # skip the first node
     for depth, node in tree_nodes:
         # check if the entire current branch was parsed, and start walking to the next branch
@@ -126,9 +132,9 @@ def format_reply_text(text: str) -> str:
 
 
 def format_prev_text(text: str):
-    global MAX_TEXT_LEN
+    global MAX_DISPLAY_TEXT_LEN
 
-    if len(text) <= MAX_TEXT_LEN:
+    if len(text) <= MAX_DISPLAY_TEXT_LEN:
         return text
 
     splitted_text = text.split(" ")
@@ -136,7 +142,7 @@ def format_prev_text(text: str):
     total_length = 0
     for i, token in enumerate(splitted_text):
         total_length += len(token) + 1
-        if total_length >= MAX_TEXT_LEN:
+        if total_length >= MAX_DISPLAY_TEXT_LEN:
             last_token_index = i
             break
 
@@ -150,23 +156,54 @@ def format_branch_replies(branch_replies: List[Tuple[str, str]]) -> str:
     return branch_repr
 
 
-def filter_tasks(tree: dict, ann_tasks: Iterable[AnnotationTask]) -> List[AnnotationTask]:
+def is_relevant_tree(tree: dict) -> bool:
     op = tree[NODE_FIELD][AUTHOR_FIELD]
     if op == "[deleted]":
+        return False
+    if len(tree[NODE_FIELD][EXTRA_DATA_FIELD][TITLE_FIELD]) > MAX_TITLE_LENGTH:
+        return False
+
+    return True
+
+
+def is_relevant_task(task: AnnotationTask, relevant_users: Set[str]) -> bool:
+    if task.user_name not in relevant_users:
+        return False
+    if get_num_quotes(task.text) > MAX_QUOTES:
+        return False
+    if get_quotes_portion(task.text) > MAX_QUOTE_PORTION:
+        return False
+    if len(task.text) > MAX_TEXT_LEN:
+        return False
+    if task.text == "[removed]":
+        return False
+
+    return True
+
+
+def get_users_with_multiple_tasks(tasks: Iterable[AnnotationTask]):
+    counts = Counter((t.user_name for t in tasks))
+    return set(map(itemgetter(0), takewhile(lambda t: t[1] >= 2, counts.most_common())))
+
+
+def filter_tasks(tree: dict, ann_tasks: Iterable[AnnotationTask]) -> List[AnnotationTask]:
+    if not is_relevant_tree(tree):
         return []
+
+    op = tree[NODE_FIELD][AUTHOR_FIELD]
     interactions = parse_users_interactions(tree)
     undir_graph = get_core_interactions(interactions, op)
     users = set(undir_graph.nodes())
-    if len(users) < 10:
+    if len(users) < MIN_CORE_SIZE:
         return []
 
-    if len(tree[NODE_FIELD][EXTRA_DATA_FIELD][TITLE_FIELD]) > MAX_TITLE_LENGTH:
-        return []
+    users.discard("[deleted]")
+    task_relevancy_func = partial(is_relevant_task, relevant_users=users)
+    relevant_tasks = list(filter(task_relevancy_func, ann_tasks))
 
-    tasks = filter(lambda task: task.user_name in users, ann_tasks)
-    tasks = filter(lambda task: get_num_quotes(task.text) <= MAX_QUOTES, tasks)
-    tasks = filter(lambda task: get_quotes_portion(task.text) <= MAX_QUOTE_PORTION, tasks)
-    return list(tasks)
+    # relevant_users = get_users_with_multiple_tasks(relevant_tasks)
+    # relevant_tasks = filter(lambda t: t.user_name in relevant_users, relevant_tasks)
+    return list(relevant_tasks)
 
 
 def write_annotation_tasks(p_tasks: Iterable[AnnotationTask], path: str):
@@ -188,16 +225,22 @@ if __name__ == "__main__":
     labeled_trees_path = sys.argv[1]    # "/home/ron/data/bgu/labeled/61019_notcut_trees.txt"
     outpath = sys.argv[2]    # "/home/ron/data/bgu/stance_annotation/tasks_v1.0.0.csv"
 
-    trees = iter_trees(labeled_trees_path)
-    # deque(islice(trees, 12), maxlen=0)
-    trees = islice(trees, 30)
+    trees = enumerate(iter_trees(labeled_trees_path))
+    deque(islice(trees, 18), maxlen=0)
+    trees = islice(trees, 40)
     tasks = []
-    for tree in trees:
+    for i, tree in trees:
+        print(f"tree: {i}")
         tree_tasks = prepare_annotation_tasks_from_tree(tree)
         tree_tasks = filter_tasks(tree, tree_tasks)
         shuffle(tree_tasks)
         tasks.extend(tree_tasks)
+        print(f"Num tasks added: {len(tree_tasks)}")
+        print(f"Num users added: {len(set([t.user_name for t in tree_tasks]))}")
+        print()
 
-    print(len(tasks))
-    first_tasks = tasks[:180]
-    write_annotation_tasks(first_tasks, outpath)
+    print(f"Total number of tasks: {len(tasks)}")
+    print(f"Total number of users: {len(set([(t.tree_id, t.user_name) for t in tasks]))}")
+    print(f"Total number of trees: {len(set([t.tree_id for t in tasks]))}")
+    # first_tasks = tasks[:180]
+    write_annotation_tasks(tasks, outpath)
