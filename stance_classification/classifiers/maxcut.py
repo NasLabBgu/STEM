@@ -85,7 +85,7 @@ def find_relaxation(G: nx.Graph, X: Variable, L: AffinExp, num_nodes: int, maxcu
         for j in range(i + 1, num_nodes):
             V[i, j] = 0
 
-    output_vertex_embedding(G, V)
+    # output_vertex_embedding(G, V)
 
     # Do up to 100 projections. Stop if we are within a factor 0.878 of the SDP
     # optimal value.
