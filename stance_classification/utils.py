@@ -13,9 +13,19 @@ QUOTE_START_SYMBOL = "<quote>"
 QUOTE_END_SYMBOL = "</quote>"
 
 
-def iter_trees_from_jsonl(data_path: str) -> dict:
+def iter_trees_from_lines(data_path: str) -> Iterable[str]:
+    """
+    iterates a trees from a file where each line represent a whole conversation tree.
+    :param data_path: a path to file with a tree per line.
+    :return: An iterable of raw trees (i.e not parsed) as displayed in the file.
+    """
     with open(data_path, 'r') as f:
-        yield from map(json.loads, f)
+        yield from f
+
+
+def iter_trees_from_jsonl(data_path: str) -> Iterable[dict]:
+    trees_as_json = iter_trees_from_lines(data_path)
+    yield from map(json.loads, trees_as_json)
 
 
 def find_user_mentions(text: str) -> List[Tuple[int, int]]:
