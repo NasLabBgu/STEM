@@ -10,7 +10,6 @@ from stance_classification.graph_utils import inter_communication_index, tree_to
 from stance_classification.classifiers.greedy_stance_classifier import MSTStanceClassifier
 from stance_classification.classifiers.maxcut_stance_classifier import MaxcutStanceClassifier
 from stance_classification.classifiers.random_stance_classifier import RandomStanceClassifier
-from stance_classification.user_interaction.user_interaction_parser import parse_users_interactions, UsersInteraction
 from stance_classification.user_interaction.users_interaction_graph import draw_user_interactions_graph, \
      get_core_interactions
 from stance_classification.utils import iter_trees_from_jsonl, skip_elements

@@ -5,7 +5,6 @@ from dataclasses import dataclass, field as dataclass_field
 from stance_classification.utils import find_user_mentions, strip_mention_prefix, find_quotes, strip_quote_symbols, \
     is_source_of_quote
 
-from treetools.TreeTools import walk_tree
 
 DELTA_BOT_USER = "DeltaBot"
 CONFIRMED_AWARD_PREFIX = "Confirmed:"
@@ -32,65 +31,6 @@ class UsersInteraction:
 
     def __getitem__(self, field: str):
         return self.__dict__[field]
-
-
-def parse_users_interactions(tree: dict, anonimous: bool = False) -> Dict[str, Dict[str, UsersInteraction]]:
-    """
-    parse the different interactions of the users in the given conversation 'tree' between the users.
-    :param tree: conversation tree
-    :return: interactions graph between the users in the tree, such that each edge in the graph
-             represents a summary of multiple types of interactions between the two adjacent users.
-    """
-    # get OP and the first node of the conversation and initialize variables
-    first_node = tree[NODE_FIELD]
-    if anonimous:
-        first_node[AUTHOR_FIELD] = "user0"
-
-    op: str = first_node[AUTHOR_FIELD]
-    interactions: Dict[str, Dict[str, UsersInteraction]] = {op: {}}
-    current_branch_nodes: List[dict] = [first_node]     # Stores the previous nodes in the parsed branch
-
-    users_index = {}
-    if anonimous:
-        user_index = users_index.setdefault(op, len(users_index))
-        op = f"user{user_index}"
-
-    tree_nodes = walk_tree(tree)
-    next(tree_nodes)    # skip the first node
-    for depth, node in tree_nodes:
-        # check if the entire current branch was parsed, and start walking to the next branch
-        if depth < len(current_branch_nodes):
-            del current_branch_nodes[depth:]
-
-        text = node[TEXT_FIELD]
-        timestamp = 0 # node[TIMESTAMP_FIELD]
-        current_author = node[AUTHOR_FIELD]
-        if anonimous:
-            user_index = users_index.setdefault(current_author, len(users_index))
-            current_author = f"user{user_index}"
-            node[AUTHOR_FIELD] = current_author
-
-        author_interactions = interactions.setdefault(current_author, {})
-
-        # Check if deltabot awarded a delta
-        if add_award_interaction(text, op, current_author, current_branch_nodes, author_interactions):
-            pass
-        elif current_author == DELTA_BOT_USER:
-            pass
-        else:
-            # parse current node interactions and add to interactions graphs
-            prev_author = current_branch_nodes[-1][AUTHOR_FIELD]
-            add_reply_interactions(prev_author, author_interactions)
-            add_mentions_interactions(text, author_interactions)
-            add_quotes_interactions(text, tree, current_branch_nodes, timestamp, author_interactions)
-            add_labels(node, prev_author, author_interactions)
-
-        current_branch_nodes.append(node)
-
-    if DELTA_BOT_USER in interactions:
-        del interactions[DELTA_BOT_USER]
-
-    return interactions
 
 
 def add_award_interaction(author: str, text: str, op: str, current_branch_nodes: List[dict],
@@ -158,58 +98,6 @@ def add_mentions_interactions(text: str, author_interactions: Dict[str, UsersInt
             pair_interaction.num_mentions += 1
 
         return len(user_mentions)
-
-
-def add_quotes_interactions(text: str, tree: dict, current_branch_nodes: List[dict], timestamp: int,
-                            author_interactions: Dict[str, UsersInteraction]) -> int:
-    """
-    parse mentions in the text and add interactions from 'author' to the mentioned user.
-    :param text: reply content
-    :param tree:
-    :param current_branch_nodes:
-    :param author_interactions: interactions from the author of 'text' to other users
-    :return: return number of added interactions
-    """
-    quotes_positions = find_quotes(text)
-    quotes_authors = []
-    for pos, endpos in quotes_positions:
-        quote = text[pos: endpos]
-        author = find_quote_author(quote, tree, reversed(current_branch_nodes), timestamp)
-        if author is not None:
-            quotes_authors.append(author)
-
-    for quote_author in quotes_authors:
-        pair_interaction = author_interactions.setdefault(quote_author, UsersInteraction())
-        pair_interaction.num_quotes += 1
-
-    return len(quotes_authors)
-
-
-def find_quote_author(quote: str, tree: dict, preferred_nodes: Iterable[dict] = None, quote_timestamp: int = None) -> Union[str, None]:
-    """
-    search the source of the quote in the tree.
-    :param quote: the text of the quote to search.
-    :param tree: the tree where the source text of the quote exists.
-    :param preferred_nodes: (optional) optimize the process by searching this list of nodes first.
-                            if None is given, the preferred nodes search is ignored.
-    :param quote_timestamp: (optional) use timestamp to check only nodes with earlier timestamp.
-                            if None is given, the timestamp of the node is ignored.
-    :return: author of the quote if found, None if not found
-    """
-    # clean quote symbols
-    quote_text = strip_quote_symbols(quote)
-
-    if preferred_nodes is not None:
-        for node in preferred_nodes:
-            if is_source_of_quote(quote_text, node[TEXT_FIELD]):
-                return node[AUTHOR_FIELD]
-
-    for depth, node in walk_tree(tree):
-        if quote_timestamp and (node[TIMESTAMP_FIELD] >= quote_timestamp):
-            continue
-
-        if is_source_of_quote(quote_text, node[TEXT_FIELD]):
-            return node[AUTHOR_FIELD]
 
 
 def check_delta_award(author: str, text: str) -> int:
