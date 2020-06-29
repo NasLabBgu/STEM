@@ -3,8 +3,8 @@ from typing import Dict, Tuple, Sequence
 
 import picos as pic
 
-from picos.expressions import Variable, AffinExp
-from picos.problem import Problem
+from picos.expressions import BaseVariable, AffineExpression
+from picos import Problem
 import cvxopt as cvx
 import cvxopt.lapack
 from cvxopt.base import matrix as cvx_matrix
@@ -66,7 +66,7 @@ def solve_maxcut(G: nx.Graph):
     return G, X, L, num_nodes, maxcut
 
 
-def find_relaxation(G: nx.Graph, X: Variable, L: AffinExp, num_nodes: int, maxcut: Problem) -> Tuple[float, set]:
+def find_relaxation(G: nx.Graph, X: BaseVariable, L: AffineExpression, num_nodes: int, maxcut: Problem) -> Tuple[float, set]:
     """
     :param X: Positive Semidefinite matrix
     :param L:  Laplacian matix of the graph

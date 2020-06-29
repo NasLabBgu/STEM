@@ -1,3 +1,5 @@
-numpy
+picos~=2.0.8
+cvxopt~=1.2.5
+numpy~=1.19.0
 networkx
-matplotlib
+matplotlib~=3.2.2

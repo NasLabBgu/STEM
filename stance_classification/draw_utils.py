@@ -7,7 +7,6 @@ import networkx as nx
 import pylab
 from networkx.drawing.nx_agraph import graphviz_layout
 
-from treetools.TreeTools import walk_tree
 
 OP_COLOR = 'green'
 SUPPORT_COLOR = 'lightgreen'
