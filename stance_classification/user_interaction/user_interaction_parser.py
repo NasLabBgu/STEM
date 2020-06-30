@@ -57,7 +57,6 @@ def add_award_interaction(author: str, text: str, op: str, current_branch_nodes:
 
     if delta_award_recipient != current_branch_nodes[-2][AUTHOR_FIELD]:
         if current_branch_nodes[-2][AUTHOR_FIELD] != "[deleted]":
-            print(delta_award_recipient, current_branch_nodes[-2][AUTHOR_FIELD])
             delta_award_recipient = current_branch_nodes[-2][AUTHOR_FIELD]
 
     pair_interaction = author_interactions.setdefault(delta_award_recipient, UsersInteraction())

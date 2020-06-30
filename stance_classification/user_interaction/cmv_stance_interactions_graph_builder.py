@@ -79,7 +79,6 @@ def get_delta_users(node: NodeData, branch: List[NodeData], tree: Conversation) 
 
     if delta_recipient != branch[-2].data[AUTHOR_FIELD]:
         if branch[-2].data[AUTHOR_FIELD] != "[deleted]":
-            print(delta_recipient, branch[-2].data[AUTHOR_FIELD])
             delta_recipient = branch[-2].data[AUTHOR_FIELD]
 
     delta_giver = branch[-1].data[AUTHOR_FIELD]
@@ -94,7 +93,7 @@ class CMVStanceBasedInteractionGraphBuilder(object):
         delta_counter = CountInteractionsAggregator("deltas", get_delta_users)
 
         self.__interactions_parser = InteractionsParser(reply_counter, mention_counter, quotes_counter, delta_counter,
-                                                 directed=True)
+                                                 directed=False)
 
     def build(self, conversation: Conversation) -> InteractionsGraph:
         return self.__interactions_parser.parse(conversation)

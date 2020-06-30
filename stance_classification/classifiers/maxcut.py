@@ -1,7 +1,7 @@
 import os
 from typing import Dict, Tuple, Sequence
 
-import picos as pic
+import picos
 
 from picos.expressions import BaseVariable, AffineExpression
 from picos import Problem
@@ -38,17 +38,17 @@ def solve_maxcut(G: nx.Graph):
     """
 
     num_nodes = G.number_of_nodes()
-    maxcut = pic.Problem()
+    maxcut = picos.Problem()
 
     # Add the symmetric matrix variable.
     X = maxcut.add_variable('X', (num_nodes, num_nodes), 'symmetric')
 
     # Retrieve the Laplacian of the graph.
     LL = 1 / 4. * nx.laplacian_matrix(G).todense()
-    L = pic.new_param('L', LL)
+    L = picos.new_param('L', LL)
 
     # Constrain X to have ones on the diagonal.
-    maxcut.add_constraint(pic.tools.diag_vect(X) == 1)
+    maxcut.add_constraint(picos.diag_vect(X) == 1)
 
     # Constrain X to be positive semidefinite.
     maxcut.add_constraint(X >> 0)
