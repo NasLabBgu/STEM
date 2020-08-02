@@ -23,7 +23,7 @@ IRRELEVANT_USERS = {None, "DeltaBot", "[deleted]", "AutoModerator"}
 
 SUPPORT_GROUP_MARK = "S"
 OPPOSE_GROUP_MARK = "O"
-MAX_USERS_THRESHOLD = 80 # for efficiency reasons
+MAX_USERS_THRESHOLD = 50 # for efficiency reasons
 
 
 class CMVAgreementBasedInteractionGraphBuilder(object):
@@ -80,9 +80,9 @@ def generate_records(interactions_graph: InteractionsGraph, supporters: Set[str]
             label = int(author_group == recipient_group)
             parent_node_id = node.parent_id
             parent_content = None
-            for depth, node in conversation.iter_conversation():
-                if node.node_id == parent_node_id:
-                    parent_content = node.data["text"]
+            for depth, n in conversation.iter_conversation():
+                if n.node_id == parent_node_id:
+                    parent_content = n.data["text"]
             record = [
                 conversation_id,
                 op,
