@@ -6,8 +6,6 @@ import networkx as nx
 
 from stance_classification.user_interaction.user_interaction_parser import UsersInteraction
 
-# tree dict fields
-from treetools.TreeTools import walk_tree
 
 NODE_FIELD = "node"
 AUTHOR_FIELD = "author"
