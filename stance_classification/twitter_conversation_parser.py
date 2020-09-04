@@ -6,7 +6,7 @@ import pandas as pd
 
 from conversant.conversation.parse import ConversationParser, DataFrameConversationReader
 from conversant.conversation import NodeData, ConversationNode, Conversation
-from conversation.conversation_utils import iter_conversation_by_timestamp
+from conversant.conversation.conversation_utils import iter_conversation_by_timestamp
 
 
 class TwitterConversationReader(ConversationParser[pd.DataFrame, pd.Series]):
