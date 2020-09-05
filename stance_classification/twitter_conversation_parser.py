@@ -54,7 +54,6 @@ class TwitterConversationReader(ConversationParser[pd.DataFrame, pd.Series]):
 
     def iter_raw_nodes(self, raw_conversation: pd.DataFrame) -> Iterable[pd.Series]:
         raw_conversation["timestamp"] = raw_conversation["created_at"].apply(pd.Timestamp.timestamp)
-        raw_conversation = merge_sequential_tweets(raw_conversation)
         for x in raw_conversation.iterrows():
             yield x[1]
 
