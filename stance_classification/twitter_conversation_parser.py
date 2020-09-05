@@ -53,7 +53,7 @@ class TwitterConversationReader(ConversationParser[pd.DataFrame, pd.Series]):
         return self.dataframe_parser.extract_data(raw_node)
 
     def iter_raw_nodes(self, raw_conversation: pd.DataFrame) -> Iterable[pd.Series]:
-        raw_conversation["timestamp"] = raw_conversation["created_at"].apply(pd.Timestamp.timestamp)
+        raw_conversation["timestamp"] = raw_conversation["created_at"].apply(extract_timestamp)
         for x in raw_conversation.iterrows():
             yield x[1]
 
@@ -94,3 +94,10 @@ def merge_tweets(tweets: Iterable[ConversationNode]) -> ConversationNode:
 
     first_tweet.children = list(main_children.values())
     return first_tweet
+
+
+def extract_timestamp(ts: pd.Timestamp) -> int:
+    if pd.isnull(ts):
+        ts = pd.Timestamp.now()
+
+    return ts.timestamp()
