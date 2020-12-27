@@ -1,10 +1,10 @@
 import os
-from typing import Dict, Tuple, Sequence
+from typing import Dict, Tuple, Sequence, Any
 
 import picos
 
-from picos.expressions import BaseVariable, AffineExpression
-from picos import Problem
+from picos.expressions import AffineExpression
+from picos import Problem, SymmetricVariable
 import cvxopt as cvx
 import cvxopt.lapack
 from cvxopt.base import matrix as cvx_matrix
@@ -30,9 +30,9 @@ def output_vertex_embedding(graph: nx.Graph, embeddings: cvx_matrix):
     embeddings_df.to_csv(outpath, index=False)
 
 
-def solve_maxcut(G: nx.Graph):
+def solve_sdp(G: nx.Graph):
     """
-
+    solve the sdp problem with object of max-cut and G as an input.
     :param G: undirected graph
     :return:
     """
@@ -56,17 +56,13 @@ def solve_maxcut(G: nx.Graph):
     # Set the objective.
     maxcut.set_objective('max', L | X)
 
-    # print(maxcut)
-
     # Solve the problem.
     maxcut.solve(verbose=0, solver='cvxopt')
-
-    # print('bound from the SDP relaxation: {0}'.format(maxcut.obj_value()))
 
     return G, X, L, num_nodes, maxcut
 
 
-def find_relaxation(G: nx.Graph, X: BaseVariable, L: AffineExpression, num_nodes: int, maxcut: Problem) -> Tuple[float, set]:
+def find_relaxation(G: nx.Graph, X: SymmetricVariable, L: AffineExpression, num_nodes: int, maxcut: Problem) -> Tuple[float, set, Dict[Any, np.ndarray]]:
     """
     :param X: Positive Semidefinite matrix
     :param L:  Laplacian matix of the graph
@@ -78,9 +74,10 @@ def find_relaxation(G: nx.Graph, X: BaseVariable, L: AffineExpression, num_nodes
     # Use a fixed RNG seed so the result is reproducable.
     cvx.setseed(1919)
 
-    # Perform a Cholesky factorization.
+    # Perform a Cholesky factorization (in the lower triangular part of the matrix)
     V = X.value
     cvxopt.lapack.potrf(V)
+    # set the resulting matrix into a lower triangular matrix
     for i in range(num_nodes):
         for j in range(i + 1, num_nodes):
             V[i, j] = 0
@@ -106,21 +103,22 @@ def find_relaxation(G: nx.Graph, X: BaseVariable, L: AffineExpression, num_nodes
     # Extract the cut and the seperated node sets.
     indexed_nodes = list(G.nodes)
     cut_nodes = [indexed_nodes[i] for i in range(num_nodes) if x[i] < 0]
-    return maxcut.obj_value(), cut_nodes
+    embeddings = {indexed_nodes[i]: V[i, :] for i in range(num_nodes)}
+    return maxcut.obj_value(), cut_nodes, embeddings
 
 
-def max_cut(G: nx.Graph) -> Tuple[float, set]:
+def max_cut(G: nx.Graph) -> Tuple[float, set, Dict[Any, np.ndarray]]:
     """
     :param G: an undirected graph
     :param weights:
     :return:
     """
     if G.number_of_nodes() <= 1:
-        return 0, G.nodes()
+        return 0, G.nodes(), None
 
-    G, X, L, num_nodes, maxcut = solve_maxcut(G)
-    relxation_value, cut_nodes = find_relaxation(G, X, L, num_nodes, maxcut)
-    return relxation_value, cut_nodes
+    G, X, L, num_nodes, maxcut = solve_sdp(G)
+    relxation_value, cut_nodes, embeddings = find_relaxation(G, X, L, num_nodes, maxcut)
+    return relxation_value, cut_nodes, embeddings
 
 
 def draw_maxcut(graph: nx.Graph, cut_nodes: set, relaxation_value: float, op: str = None, outpath=None):
