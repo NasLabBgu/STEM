@@ -67,6 +67,7 @@ def load_author_labels(path: str) -> Iterable[AuthorLabel]:
 if __name__ == "__main__":
     path = "/home/dev/data/stance/IAC/alternative/fourforums/mturk_author_stance.txt"
     labels = list(load_author_labels(path))
+    print(labels)
     topics = {3, 7, 8, 9}
     topic_counts = Counter()
     for i in range(len(labels)):

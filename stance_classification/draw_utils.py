@@ -8,9 +8,15 @@ import pylab
 from networkx.drawing.nx_agraph import graphviz_layout
 
 
-OP_COLOR = 'green'
+OP_COLOR = 'tab:blue'
 SUPPORT_COLOR = 'lightgreen'
-OPPOSE_COLOR = 'lightblue'
+TRUE_SUPPORT_COLOR = "tab:green"
+OPPOSE_COLOR = 'lightcoral'
+TRUE_OPPOSE_COLOR = "tab:red"
+UNKNOWN_GT_LABEL = "tab:gray"
+CUT_EDGE_COLOR = "black"
+NON_CUT_EDGE_COLOR = "darkgray"
+NODE_LABEL_COLOR = "tab:brown"
 
 fig: pylab.Figure = None
 

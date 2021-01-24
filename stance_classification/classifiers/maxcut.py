@@ -1,5 +1,6 @@
 import os
-from typing import Dict, Tuple, Sequence, Any
+from operator import itemgetter
+from typing import Dict, Tuple, Sequence, Any, List, Set, Union
 
 import picos
 
@@ -30,7 +31,7 @@ def output_vertex_embedding(graph: nx.Graph, embeddings: cvx_matrix):
     embeddings_df.to_csv(outpath, index=False)
 
 
-def solve_sdp(G: nx.Graph):
+def solve_sdp(G: nx.Graph, weight: str = "weight"):
     """
     solve the sdp problem with object of max-cut and G as an input.
     :param G: undirected graph
@@ -44,7 +45,7 @@ def solve_sdp(G: nx.Graph):
     X = maxcut.add_variable('X', (num_nodes, num_nodes), 'symmetric')
 
     # Retrieve the Laplacian of the graph.
-    LL = 1 / 4. * nx.laplacian_matrix(G).todense()
+    LL = 1 / 4. * nx.laplacian_matrix(G, weight=weight).todense()
     L = picos.new_param('L', LL)
 
     # Constrain X to have ones on the diagonal.
@@ -107,18 +108,26 @@ def find_relaxation(G: nx.Graph, X: SymmetricVariable, L: AffineExpression, num_
     return maxcut.obj_value(), cut_nodes, embeddings
 
 
-def max_cut(G: nx.Graph) -> Tuple[float, set, Dict[Any, np.ndarray]]:
+def max_cut(G: nx.Graph, weight: str = "weight") -> Tuple[float, set, Union[None, Dict[Any, np.ndarray]]]:
     """
     :param G: an undirected graph
     :param weights:
     :return:
     """
     if G.number_of_nodes() <= 1:
-        return 0, G.nodes(), None
+        return get_empty_result()
 
-    G, X, L, num_nodes, maxcut = solve_sdp(G)
+    sum_edges_weight = sum(map(itemgetter(weight), map(itemgetter(2), G.edges(data=True))))
+    if sum_edges_weight == 0:
+        return get_empty_result()
+
+    G, X, L, num_nodes, maxcut = solve_sdp(G, weight)
     relxation_value, cut_nodes, embeddings = find_relaxation(G, X, L, num_nodes, maxcut)
     return relxation_value, cut_nodes, embeddings
+
+
+def get_empty_result() -> Tuple[float, Set[Any], None]:
+    return 0.0, set(), None
 
 
 def draw_maxcut(graph: nx.Graph, cut_nodes: set, relaxation_value: float, op: str = None, outpath=None):

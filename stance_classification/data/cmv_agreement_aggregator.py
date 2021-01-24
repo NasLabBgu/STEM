@@ -1,6 +1,6 @@
 from typing import List, Iterable, Tuple, Any
 
-from conversation import NodeData, Conversation
+from conversant.conversation import NodeData, Conversation
 from conversant.interactions.aggregators import InteractionsAggregator
 
 
