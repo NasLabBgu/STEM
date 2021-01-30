@@ -12,8 +12,10 @@ from stance_classification.classifiers.stance_classification_utils import get_cu
 
 
 class MSTStanceClassifier(BaseStanceClassifier):
-    def __init__(self):
+    def __init__(self, weight_field: str = "weight", strategy: str = "prim"):
         self.initialized = False
+        self.weight_field = weight_field
+        self.strategy = strategy
 
         # input
         self.graph: nx.Graph = None
@@ -28,14 +30,14 @@ class MSTStanceClassifier(BaseStanceClassifier):
         self.graph = graph
         self.initialized = True
 
-    def classify_stance(self, op: str, algo='prim'):
+    def classify_stance(self, op: str):
         self.op = op
 
         # add negative weight value to each node
         for v, u, data in self.graph.edges(data=True):
-            data['neg-weight'] = -1 * data['weight']
+            data['neg-weight'] = -1 * data[self.weight_field]
 
-        mst = nx.maximum_spanning_tree(self.graph, weight='neg-weight', algorithm=algo)
+        mst = nx.maximum_spanning_tree(self.graph, weight='neg-weight', algorithm=self.strategy)
         supporters, opposers = bipartite.sets(mst)
         if op in opposers:
             supporters, opposers = opposers, supporters

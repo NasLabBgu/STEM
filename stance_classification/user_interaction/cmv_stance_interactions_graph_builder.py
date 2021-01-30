@@ -1,9 +1,8 @@
 from typing import Any, List, Iterable, Tuple
 
 from conversant.conversation import NodeData, Conversation
-from conversant.interactions import InteractionsParser
+from conversant.interactions import InteractionsParser, InteractionsGraph
 from conversant.interactions.aggregators import CountInteractionsAggregator
-from interactions import InteractionsGraph
 from stance_classification.reddit_conversation_parser import CMVConversationReader
 from stance_classification.user_interaction.cmv_interactions_utils import find_quote_author, check_delta_award, \
     find_award_recipient
@@ -77,11 +76,11 @@ def get_delta_users(node: NodeData, branch: List[NodeData], tree: Conversation) 
     if delta_recipient is None:
         return []
 
-    if delta_recipient != branch[-2].data[AUTHOR_FIELD]:
-        if branch[-2].data[AUTHOR_FIELD] != "[deleted]":
-            delta_recipient = branch[-2].data[AUTHOR_FIELD]
+    if delta_recipient != branch[-3].data[AUTHOR_FIELD]:
+        if branch[-3].data[AUTHOR_FIELD] != "[deleted]":
+            delta_recipient = branch[-3].data[AUTHOR_FIELD]
 
-    delta_giver = branch[-1].data[AUTHOR_FIELD]
+    delta_giver = branch[-2].data[AUTHOR_FIELD]
     return [(delta_giver, delta_recipient)]
 
 
@@ -100,18 +99,20 @@ class CMVStanceBasedInteractionGraphBuilder(object):
 
 
 if __name__ == "__main__":
-    conversation_file = "cmv-conversation-example.json"
-    with open(conversation_file, 'r') as f:
-        raw_conversation = f.read()
-
+    # conversation_file = "cmv-conversation-example.json"
     cmv_reader = CMVConversationReader()
-    conversation = cmv_reader.parse(raw_conversation)
-    print(conversation)
-
-    print()
-
     interactions_graph_builder = CMVStanceBasedInteractionGraphBuilder()
-    interaction_graph = interactions_graph_builder.build(conversation)
-    [print(i) for i in interaction_graph.interactions]
+
+    conversation_file = "/home/dev/data/stance/cmv/trees_2.0.txt"
+    with open(conversation_file, 'r') as f:
+        for raw_conversation in f:
+
+            conversation = cmv_reader.parse(raw_conversation)
+            print(conversation)
+
+            print()
+
+            interaction_graph = interactions_graph_builder.build(conversation)
+            # [print(i) for i in interaction_graph.interactions]
 
 

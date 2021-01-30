@@ -33,15 +33,15 @@ class MaxcutStanceClassifier(BaseStanceClassifier):
         self.supporters: Set[str] = None
         self.complement: Set[str] = None
 
-    def set_input(self, graph: nx.Graph):
+    def set_input(self, graph: nx.Graph, op: Any):
         self.graph = graph
+        self.op = op
         self.initialized = True
 
-    def classify_stance(self, op: str, algo='prim'):
+    def classify_stance(self):
         cut_value, cut_nodes, embeddings = max_cut(self.graph, weight=self.__weight_field)
         self.cut_value = cut_value
-        self.op = op
-        self.supporters = self.__get_supporters(cut_nodes, op)
+        self.supporters = self.__get_supporters(cut_nodes, self.op)
         self.complement = self.graph.nodes - self.supporters
         self.cut = get_cut_from_nodelist(set(self.graph.edges), set(self.supporters))
         self.embeddings = {n: np.array(v) for n, v in embeddings.items()}
