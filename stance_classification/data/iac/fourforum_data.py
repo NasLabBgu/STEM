@@ -7,6 +7,8 @@ from typing import NamedTuple, Iterable, List, Union, Dict, Tuple
 
 import tqdm
 
+import pandas as pd
+
 from conversant.conversation import Conversation
 from conversant.interactions import InteractionsGraph
 from stance_classification.data.iac import FourForumInteractionsBuilder
@@ -33,14 +35,15 @@ class PostRecord(NamedTuple):
     creation_date: str
     parent: int
     parent_missing: bool
-    text_id: int
+    text: str
     quote_source_ids: List[int] # post ids of the quotes contained in this ppost
 
     @staticmethod
-    def from_csv_record(record: List[str], quotes_mapping: Dict[Tuple[int, int], List[int]] = None, topic_mapping: Dict[int, int] = None):
+    def from_csv_record(record: List[str], quotes_mapping: Dict[Tuple[int, int], List[int]] = None, topic_mapping: Dict[int, int] = None, texts_mapping: Dict[int, str] = None):
         discussion_id = int(record[0])
         post_id = int(record[1])
         quotes = quotes_mapping.get((discussion_id, post_id)) if quotes_mapping is not None else None
+        text = texts_mapping.get(int(record[6]), "[deleted]") if texts_mapping is not None else ""
         return PostRecord(
             topic_mapping.get(discussion_id, -1),
             discussion_id,
@@ -49,7 +52,7 @@ class PostRecord(NamedTuple):
             str(record[3]),
             PostRecord.get_parent_id(record[4]),
             bool(int(record[5])),
-            int(record[6]),
+            text,
             quotes or []
         )
 
@@ -59,6 +62,29 @@ class PostRecord(NamedTuple):
             return None
 
         return int(raw_parent_id)
+
+
+def load_texts_map() -> Dict[int, str]:
+    print("load texts mapping")
+    with open("/home/dev/data/stance/IAC/alternative/fourforums/text.txt", 'r') as f:
+        texts_map = {}
+        text_id, post_text = None, ""
+        for i, line in enumerate(f):
+            if text_id is None:
+                split_line = line.strip().split('\t', 1)
+                text_id = int(split_line[0])
+                line_text = split_line[1] if len(split_line) > 1 else ""
+            else:
+                line_text = line.strip()
+
+            if not line_text.endswith('\\'):
+                texts_map[text_id] = post_text + line_text
+                text_id, post_text = None, ""
+                continue
+
+            post_text += line_text[:-1] + "\n"
+
+        return texts_map
 
 
 def load_topics_mapping() -> Dict[int, int]:
@@ -93,9 +119,10 @@ def load_post_records(dirpath: str) -> Iterable[PostRecord]:
     quotes_path = os.path.join(dirpath, QUOTES_FILENAME)
     quotes_mapping = load_quotes(quotes_path)
     topic_mapping = load_topics_mapping()
+    text_mapping = load_texts_map()
 
     def to_post_record(record: List[str]):
-        return PostRecord.from_csv_record(record, quotes_mapping=quotes_mapping, topic_mapping=topic_mapping)
+        return PostRecord.from_csv_record(record, quotes_mapping=quotes_mapping, topic_mapping=topic_mapping, texts_mapping=text_mapping)
 
     posts_path = os.path.join(dirpath, POSTS_FILENAME)
     with open(posts_path, 'r') as f:
@@ -119,10 +146,13 @@ def build_interaction_graphs(convs: Iterable[Conversation]) -> Iterable[Interact
 if __name__ == "__main__":
     data_path = "/home/dev/data/stance/IAC/alternative/fourforums"
     records = load_post_records(data_path)
-    convs = list(tqdm.tqdm(build_conversations(records)))
-    print(convs[0].id)
-    print(convs[2].id)
-    print(convs[3].id)
+    convs = tqdm.tqdm(build_conversations(records))
+    convs = iter(convs)
+    c: Conversation
+    c = next(convs)
+    for d, n in c.iter_conversation():
+        print(n.data["text"])
+
     # c: Conversation = next(convs)
     # nodes_with_quotes = [n for _, n in c.iter_conversation() if n.data[QUOTE_NODE_FIELD]]
     # for n in nodes_with_quotes:
