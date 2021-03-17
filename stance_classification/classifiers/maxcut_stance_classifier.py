@@ -1,7 +1,8 @@
 from functools import partial
-from typing import Set, Tuple, Callable
+from typing import Set, Tuple, Callable, Any, Dict
 
 import pylab
+import numpy as np
 from networkx.algorithms import bipartite
 
 from stance_classification.draw_utils import OP_COLOR, SUPPORT_COLOR, new_figure, OPPOSE_COLOR
@@ -10,6 +11,8 @@ import networkx as nx
 
 from stance_classification.classifiers.maxcut import max_cut
 from stance_classification.classifiers.stance_classification_utils import get_cut_from_nodelist
+
+from picos import SymmetricVariable
 
 
 class MaxcutStanceClassifier(BaseStanceClassifier):
@@ -23,6 +26,7 @@ class MaxcutStanceClassifier(BaseStanceClassifier):
 
         # result
         self.cut: Set[Tuple[str, str]] = None
+        self.embeddings: Dict[Any, np.ndarray] = None
         self.supporters: Set[str] = None
         self.complement: Set[str] = None
 
@@ -31,17 +35,12 @@ class MaxcutStanceClassifier(BaseStanceClassifier):
         self.initialized = True
 
     def classify_stance(self, op: str, algo='prim'):
+        rval, cut_nodes, embeddings = max_cut(self.graph)
         self.op = op
-
-        rval, cut_nodes = max_cut(self.graph)
-        supporters = cut_nodes
-        opposers = self.graph.nodes - cut_nodes
-        if op not in cut_nodes:
-            supporters, opposers = opposers, supporters
-
-        self.supporters = supporters
-        self.complement = opposers
+        self.supporters = self.__get_supporters(cut_nodes, op)
+        self.complement = self.graph.nodes - self.supporters
         self.cut = get_cut_from_nodelist(set(self.graph.edges), set(self.supporters))
+        self.embeddings = embeddings
 
     def get_supporters(self) -> Set[str]:
         return self.supporters
@@ -87,3 +86,7 @@ class MaxcutStanceClassifier(BaseStanceClassifier):
             pylab.savefig(outpath)
 
         pylab.show()
+
+    def __get_supporters(self,  cut_nodes: Set[Any], op: Any):
+        return cut_nodes if op in cut_nodes else self.graph.nodes - cut_nodes
+
