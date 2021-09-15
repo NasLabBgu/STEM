@@ -1,3 +1,4 @@
+
 import os
 import csv
 from operator import itemgetter
@@ -64,10 +65,9 @@ class PostRecord(NamedTuple):
         return int(raw_parent_id)
 
 
-def load_texts_map(data_dir: str) -> Dict[int, str]:
+def load_texts_map() -> Dict[int, str]:
     print("load texts mapping")
-    text_path = os.path.join(data_dir, "text.txt")
-    with open(text_path, 'r') as f:
+    with open("/home/dev/data/stance/IAC/alternative/fourforums/text.txt", 'r') as f:
         texts_map = {}
         text_id, post_text = None, ""
         for i, line in enumerate(f):
@@ -88,9 +88,8 @@ def load_texts_map(data_dir: str) -> Dict[int, str]:
         return texts_map
 
 
-def load_topics_mapping(data_dir: str) -> Dict[int, int]:
-    discussion_topic_path = os.path.join(data_dir, "discussion_topic.txt")
-    with open(discussion_topic_path, 'r') as f:
+def load_topics_mapping() -> Dict[int, int]:
+    with open("/home/dev/data/stance/IAC/alternative/fourforums/discussion_topic.txt", 'r') as f:
         lines = f.read().strip().split("\n")
         pairs = map(lambda l: tuple(map(int, map(str.strip, l.strip().split()))), lines)
         return dict(pairs)
@@ -120,8 +119,8 @@ def load_quotes(path: str) -> Dict[Tuple[int, int], List[int]]:
 def load_post_records(dirpath: str) -> Iterable[PostRecord]:
     quotes_path = os.path.join(dirpath, QUOTES_FILENAME)
     quotes_mapping = load_quotes(quotes_path)
-    topic_mapping = load_topics_mapping(dirpath)
-    text_mapping = load_texts_map(dirpath)
+    topic_mapping = load_topics_mapping()
+    text_mapping = load_texts_map()
 
     def to_post_record(record: List[str]):
         return PostRecord.from_csv_record(record, quotes_mapping=quotes_mapping, topic_mapping=topic_mapping, texts_mapping=text_mapping)

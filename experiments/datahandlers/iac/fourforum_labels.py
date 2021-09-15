@@ -50,10 +50,6 @@ def resolve_author_label(annotation: AuthorAnnotations) -> AuthorLabel:
         min_votes = votes1 if max_votes is votes2 else votes2
         if max_votes / min_votes > 2:
             stance = stance1 if max_votes is votes1 else stance2
-
-            # stance labels starts at 2 - so shift them to be start at 0 instead
-            stance -= 2
-
             return AuthorLabel.from_annotation(annotation, stance)
 
     # not a significant difference between stance labels - so cannot be resolved.

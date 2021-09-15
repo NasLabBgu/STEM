@@ -20,7 +20,7 @@ OP_COLOR = 'green'
 SUPPORT_COLOR = 'lightgreen'
 OPPOSE_COLOR = 'lightblue'
 
-EMBEDDINGS_OUT_DIR = "/home/ron/workspace/bgu/stance-classification/outputs/maxcut-embeddings"
+EMBEDDINGS_OUT_DIR = "../outputs/maxcut-embeddings"
 
 
 def output_vertex_embedding(graph: nx.Graph, embeddings: cvx_matrix):

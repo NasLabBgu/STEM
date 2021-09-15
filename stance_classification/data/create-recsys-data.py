@@ -1,3 +1,5 @@
+import sys
+
 import csv
 from operator import itemgetter
 
@@ -29,7 +31,7 @@ def get_conversation_size(conv: Conversation) -> int:
 
 
 if __name__ == "__main__":
-    trees_path = r"C:\Users\ronp\Documents\stance-classification\trees_2.0.txt"
+    trees_path = sys.argv[1] #r"/home/dev/stance-classification/trees_2.0.txt"
     outpath = "cmv_recsys-project.tsv"
 
     f = open(outpath, 'w', encoding='utf8')
