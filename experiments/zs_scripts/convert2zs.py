@@ -48,7 +48,7 @@ def convert_to_zs_format(conversations: Iterable[Conversation]) -> pd.DataFrame:
                     "new_topic": topic_str,
                     "label": -1,
                     "type_idx": 1,
-                    "new_id": f"cd-{record['data.post_id']}",
+                    "new_id": f"{record['data.post_id']}",
                     "arc_id": None,
                     "text": tokens_str,
                     "pos_text": pos_str,

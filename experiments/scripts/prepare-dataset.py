@@ -1,7 +1,11 @@
+from typing import Iterable, Union
 import argparse
 import pandas as pd
 from tqdm.auto import tqdm
-from typing import Iterable
+
+
+UNKNOWN_TOPIC_ID = -1
+
 
 def up_to_root() -> str:
     file = os.path.abspath(__file__)
@@ -34,6 +38,34 @@ def conversations_to_dataframe(conversations: Iterable[Conversation]) -> pd.Data
     return pd.concat(map(conversation_to_dataframe, tqdm(conversations)))
 
 
+def has_topic(conversation: Conversation) -> bool:
+    return conversation.root.data["topic"] != UNKNOWN_TOPIC_ID
+
+
+def get_parent_post_id(dataset_name: str, row: pd.Series) -> Union[str, int]:
+    if row["is_absolute_root"]:
+        return -1
+
+    return f"{dataset_name}_{row['full_conv_id']}_{int(row['parent_id'])}"
+
+
+def transform_dataframe(data: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
+    absolute_ids = data.apply(lambda row: f"{dataset_name}_{row['full_conv_id']}_{row['node_id']}", axis=1)
+    data.insert(0, "post_id", absolute_ids)
+    del data["node_id"]
+
+    absolute_parent_ids = data.apply(lambda row: get_parent_post_id(dataset_name, row), axis=1)
+    data.insert(2, "parent_post_id", absolute_parent_ids)
+    del data["parent_id"]
+
+    data["text"] = data["data.text"]
+    data["topic_id"] = data["data.topic"]
+    data["topic_name"] = data["data.topic_name"]
+    data["quote_source_ids"] = data["data.quote_source_ids"]
+    relevant_columns = list(filter(lambda col: not col.startswith("data."), data.columns))
+    return data[relevant_columns]
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset", type=str,
@@ -42,9 +74,15 @@ if __name__ == "__main__":
                         help="Path to the IAC directory containing all dataset as downloaded and extracted")
     parser.add_argument("out", type=str,
                         help="Output path to store the dataset in the new format (similar to VAST)")
+    parser.add_argument("--only-with-topic", "-t", type=bool, default=True,
+                        help="indicates if to filter conversations without a known topic")
 
     args = parser.parse_args()
 
     convs = load_conversations(args.dataset, args.path)
+    if args.only_with_topic:
+        convs = list(filter(lambda conv: conv.root.data["topic"] != -1, convs))
+
     df = conversations_to_dataframe(convs)
+    df = transform_dataframe(df, args.dataset)
     df.to_csv(args.out, index=False)
