@@ -222,8 +222,8 @@ def write_annotation_tasks(p_tasks: Iterable[AnnotationTask], path: str):
 
 if __name__ == "__main__":
 
-    labeled_trees_path = sys.argv[1]    # "/home/ron/data/bgu/labeled/61019_notcut_trees.txt"
-    outpath = sys.argv[2]    # "/home/ron/data/bgu/stance_annotation/tasks_v1.0.0.csv"
+    labeled_trees_path = sys.argv[1]    # "/home/<user>/data/bgu/labeled/61019_notcut_trees.txt"
+    outpath = sys.argv[2]    # "/home/<user>/data/bgu/stance_annotation/tasks_v1.0.0.csv"
 
     trees = enumerate(iter_trees(labeled_trees_path))
     deque(islice(trees, 18), maxlen=0)

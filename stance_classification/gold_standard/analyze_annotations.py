@@ -125,8 +125,8 @@ def analyze_results(df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    annotation_path = "/home/ron/data/bgu/stance_annotation/Batch_3886298_batch_results.csv"
-    gs_path = "/home/ron/data/bgu/labeled/stance_gs_str.csv"
+    annotation_path = "/home/<user>/data/bgu/stance_annotation/Batch_3886298_batch_results.csv"
+    gs_path = "/home/<user>/data/bgu/labeled/stance_gs_str.csv"
 
     annotations_df = pd.read_csv(annotation_path)
     labels_df = pd.read_csv(gs_path)

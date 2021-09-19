@@ -86,7 +86,7 @@ def show_labels(trees: Iterable[dict]):
             tree_title = tree['node']['extra_data']['title']
             try:
                 draw_tree(sub_tree_graph,
-                      path=f"/home/ron/workspace/bgu/stance-classification/plots/tree-{i}-limited-users.png",
+                      path=f"/home/<user>/workspace/bgu/stance-classification/plots/tree-{i}-limited-users.png",
                           title=tree_title)
             except:
                 pass
@@ -143,8 +143,8 @@ def show_labels(trees: Iterable[dict]):
 
 if __name__ == "__main__":
     trees_index = {}
-    # labeled_trees_path = "/home/ron/data/bgu/labeled/labeled_trees.jsonl"
-    labeled_trees_path = "/home/ron/data/bgu/labeled/61019_notcut_trees.txt"
+    # labeled_trees_path = "/home/<user>/data/bgu/labeled/labeled_trees.jsonl"
+    labeled_trees_path = "/home/<user>/data/bgu/labeled/61019_notcut_trees.txt"
     trees = iter_trees_from_jsonl(labeled_trees_path)
     show_labels(trees)
 

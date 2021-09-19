@@ -10,8 +10,7 @@ from stance_classification.classifiers.greedy_stance_classifier import MSTStance
 from stance_classification.classifiers.maxcut_stance_classifier import MaxcutStanceClassifier
 from stance_classification.classifiers.random_stance_classifier import RandomStanceClassifier
 from stance_classification.classifiers.stance_classification_utils import load_labels
-from stance_classification.utils import skip_elements, iter_trees_from_jsonl
-
+from stance_classification.utils import skip_elements, iter_trees_from_jso
 
 def get_confusion_matrix(y_true: Sequence[bool], y_pred: Sequence[bool]) -> Tuple[int, int, int, int]:
     y_true = np.asarray(y_true)
@@ -63,9 +62,8 @@ def evaluate_classifier(stance_clf: BaseStanceClassifier, nodes_labels_map: Dict
 
 if __name__ == "__main__":
 
-    # labeled_trees_path = "/home/ron/data/bgu/labeled/labeled_trees.jsonl"
-    labeled_trees_path = "/home/ron/data/bgu/labeled/61019_notcut_trees.txt"
-    labels_mapping = load_labels("/home/ron/data/bgu/labeled/stance_gs.csv")
+    labeled_trees_path = "/home/<user>/data/bgu/labeled/61019_notcut_trees.txt"
+    labels_mapping = load_labels("/home/<user>/data/bgu/labeled/stance_gs.csv")
 
     print("Evaluating Max Cut")
     trees = iter_trees_from_jsonl(labeled_trees_path)

@@ -31,14 +31,13 @@ def analyze_data(trees: Iterable[dict]):
         interactions = filter_interactions(interactions, op, min_op_interact=2, weight_func=calculate_edge_weight)
         graph = build_users_interaction_graph(interactions, weight_func=calculate_edge_weight)
 
-        # draw_user_interactions_graph(graph, op=op, use_weight=True, outpath=f"/home/ron/workspace/bgu/stance-classification/examples/users-interactions-{i}-latest.png")
 
         if graph.number_of_nodes() <= 1:
             continue
 
         undir_graph = to_undirected_gaprh(graph)
         rval, cut_nodes = max_cut(undir_graph)
-        draw_maxcut(undir_graph, cut_nodes, rval, op, outpath=f"/home/ron/workspace/bgu/stance-classification/examples/users-interactions-{i}-maxcut-latest.png")
+        draw_maxcut(undir_graph, cut_nodes, rval, op, outpath=f"../stance-classification/examples/users-interactions-{i}-maxcut-latest.png")
 
 
         # print(json.dumps(interactions, indent=4, default=lambda cls: cls.__dict__))
@@ -50,7 +49,7 @@ if __name__ == "__main__":
     parser.add_argument("data", type=str, help="trees in json format to analyze")
 
     # args = parser.parse_args()
-    args = parser.parse_args(["/home/ron/data/bgu/trees_2.0.txt"])
+    args = parser.parse_args(["/home/<user>/data/bgu/trees_2.0.txt"])
 
     trees = iter_trees_from_jsonl(args.data)
     analyze_data(trees)
