@@ -1,6 +1,6 @@
 import time
 
-from typing import List, Callable, Dict, Iterable, Any, Tuple, Sequence, Set, NamedTuple, Union
+from typing import List, Dict, Iterable, Any, Tuple, Sequence, Set, NamedTuple, Union
 
 import os
 import argparse
@@ -19,12 +19,12 @@ from conversant.conversation import Conversation
 
 from sklearn.metrics import accuracy_score
 
-from data.iac.fourforum_data import \
-    load_post_records as load_4forums_post_records,\
-    build_conversations as build_4forums_conversations
+
 from data.iac.fourforum_labels import load_author_labels as load_4forums_author_labels
 from experiments.datahandlers.iac.fourforum_interactions import FourForumInteractionsBuilder
 from experiments.datahandlers.iac.fourforum_labels import AuthorLabel
+from experiments.datahandlers.loaders import load_conversations
+from experiments.utils import IncrementableInt, TimeMeasure
 from interactions import InteractionsGraph
 from interactions.interactions_graph import PairInteractionsData
 
@@ -40,71 +40,12 @@ RELEVANT_TOPICS = {3, 7, 8, 9}
 
 
 # type aliases
-ConversationsLoader = Callable[[str], List[Conversation]]
+
 LabelsByConversation = Dict[Any, Dict[Any, int]]
 PostLabels = Dict[Any, Dict[Any, int]]
 
-class IncrementableInt:
-    def __init__(self, init_value: int = 0):
-        self.value = init_value
-
-    def increment(self):
-        self.value += 1
-
-    def __repr__(self):
-        return repr(self.value)
-
-    def __str__(self):
-        return str(self.value)
-
-
-class TimeMeasure:
-    def __init__(self):
-        self.__start = None
-        self.__end = None
-
-    def start(self):
-        if self.__start is None:
-            self.__start = time.time()
-
-        return self.__start
-
-    def end(self):
-        if self.__end is None:
-            self.__end = time.time()
-
-        return self.__end
-
-    def duration(self):
-        if self.__start is None or self.__end is None:
-            raise AssertionError("Time not taken yet")
-
-        return self.__end - self.__start
-
-
-# LOAD CONVERSATIONS
-
-def load_4forums_conversations(data_dir: str) -> List[Conversation]:
-    records = tqdm(load_4forums_post_records(data_dir))
-    return list(build_4forums_conversations(records))
-
-
-loaders: Dict[str, ConversationsLoader] = {
-    "4forums": load_4forums_conversations
-}
-
-
-def load_conversations(dataset_name: str, basedir: str) -> List[Conversation]:
-    loader = loaders.get(dataset_name, None)
-    if loader is None:
-        raise ValueError(f"Unknown dataset name: {dataset_name}. must be one of f{list(loaders.keys())}")
-
-    return load_4forums_conversations(basedir)
-
 
 # LOADER AND INFER LABELS
-
-
 def create_author_labels_dict(labels: Iterable[AuthorLabel]) -> Dict[Any, int]:
     return {l.author_id: l.stance for l in labels if l.stance is not None}
 
@@ -163,35 +104,18 @@ def extend_preds(graph: nx.Graph, seed_node: Any, core_authors_preds: Dict[Any, 
     return extended_results
 
 
-class EvaluationUtils:
-    def __init__(self, author_labels_per_conversation: LabelsByConversation, post_labels: PostLabels):
-        self.author_labels_per_conversation = author_labels_per_conversation
-        self.post_labels = post_labels
+def get_author_preds(clf: BaseStanceClassifier, pivot: Any, authors_labels: Dict[Any, int]) -> Dict[Any, int]:
+    support_label = authors_labels[pivot]
+    opposer_label = 1 - support_label
+    supporters = clf.get_supporters()
+    opposers = clf.get_complement()
+    preds = {}
+    for supporter in supporters:
+        preds[supporter] = support_label
+    for opposer in opposers:
+        preds[opposer] = opposer_label
 
-    def get_authors_labels_in_conv(self, conv: Conversation) -> Dict[Any, int]:
-        if conv.id not in self.author_labels_per_conversation:
-            return None
-
-        return self.author_labels_per_conversation[conv.id]
-
-    def get_author_preds(self, clf: BaseStanceClassifier, pivot: Any, authors_labels: Dict[Any, int] = None, conv: Conversation = None) -> Dict[Any, int]:
-        if authors_labels is None:
-            if conv is None:
-                raise ValueError("At least one of 'author_labels' or 'conv' must be not None")
-
-            authors_labels = self.get_authors_labels_in_conv(conv)
-
-        support_label = authors_labels[pivot]
-        opposer_label = 1 - support_label
-        supporters = clf.get_supporters()
-        opposers = clf.get_complement()
-        preds = {}
-        for supporter in supporters:
-            preds[supporter] = support_label
-        for opposer in opposers:
-            preds[opposer] = opposer_label
-
-        return preds
+    return preds
 
 
 def get_maxcut_results(graph: InteractionsGraph, op: Any) -> MaxcutStanceClassifier:
@@ -278,8 +202,35 @@ class ExperimentResults(NamedTuple):
     large_graphs: List[int] = []
     single_author_conv: List[int] = []
 
+    def show(self):
+        print(f"total time took: {self.total_time.duration()}")
+        print(f"total number of conversations (in all topics): {len(convs)}")
+        print(f"total number of conversations (in the relevant topics): {self.on_topic_count}")
+        print(
+            f"total number of conversations with labeled authors (in the relevant topics): {self.on_topic_count.value - len(self.unlabeled_conversations)}")
+        print(f"number of conversations in eval: {len(self.convs_by_id)}")
+        all_authors_in_eval = set(
+            chain(*[predictions["mst"].keys() for cid, predictions in self.author_predictions.items()]))
+        print(f"number of unique authors in eval: {len(all_authors_in_eval)}")
+        all_authors_in_core_eval = set(
+            chain(*[predictions.get("core", {}).keys() for cid, predictions in self.author_predictions.items()]))
+        print(f"number of unique authors in core: {len(all_authors_in_core_eval)}")
+        print("=========")
+        print(f"number of conversations with single author: {len(self.single_author_conv)}")
+        print(f"number of conversations with empty core: {len(self.empty_core)}")
+        print(f"number of conversations with op not in core: {len(self.op_not_in_core)}")
+        print(f"number of conversations with too large core: {len(self.large_graphs)}")
+        print(f"number of conversations with too small cut value: {len(self.too_small_cut_value)}")
+        print(f"number of unlabeled conversations: {len(self.unlabeled_conversations)}")
+        print(f"number of conversations with unlabeled op: {len(self.unlabeled_op)}")
+        print(f"number of conversations with insufficient labeled authors: {len(self.insufficient_author_labels)}")
 
-def process_stance(conversations: Sequence[Conversation], evalutils: EvaluationUtils, naive_results: bool = False, ) -> ExperimentResults:
+
+def process_stance(
+        conversations: Sequence[Conversation],
+        author_labels_per_conversation: LabelsByConversation,
+        naive_results: bool = False
+) -> ExperimentResults:
     interactions_parser = FourForumInteractionsBuilder()
     results = ExperimentResults()
     print("Start processing authors stance")
@@ -291,7 +242,7 @@ def process_stance(conversations: Sequence[Conversation], evalutils: EvaluationU
             continue
 
         results.on_topic_count.increment()
-        authors_labels = evalutils.get_authors_labels_in_conv(conv)
+        authors_labels = author_labels_per_conversation.get(conv.id)
         if authors_labels is None:
             results.unlabeled_conversations.append(i)
             continue
@@ -316,7 +267,7 @@ def process_stance(conversations: Sequence[Conversation], evalutils: EvaluationU
         results.pivot_nodes[conv.id] = pivot_node
 
         mst = get_greedy_results(interaction_graph, pivot_node)
-        preds = evalutils.get_author_preds(mst, pivot_node, authors_labels=authors_labels)
+        preds = get_author_preds(mst, pivot_node, authors_labels=authors_labels)
         results.author_predictions[conv.id] = {"mst": preds}
 
         if naive_results:
@@ -342,7 +293,7 @@ def process_stance(conversations: Sequence[Conversation], evalutils: EvaluationU
         #     large_graphs.append(conv)
         #     continue
 
-        preds = evalutils.get_author_preds(maxcut, pivot_node, authors_labels=authors_labels)
+        preds = get_author_preds(maxcut, pivot_node, authors_labels=authors_labels)
         results.author_predictions[conv.id]["core"] = preds
 
         # get extended results
@@ -351,34 +302,6 @@ def process_stance(conversations: Sequence[Conversation], evalutils: EvaluationU
 
     results.total_time.end()
     return results
-
-
-def show_results(results: ExperimentResults):
-    print(f"total time took: {results.total_time.duration()}")
-    print(f"total number of conversations (in all topics): {len(convs)}")
-    print(f"total number of conversations (in the relevant topics): {results.on_topic_count}")
-    print(f"total number of conversations with labeled authors (in all topics): {len(author_labels_per_conversation)}")
-    print(
-        f"total number of conversations with labeled authors (in the relevant topics): {results.on_topic_count.value - len(results.unlabeled_conversations)}")
-    print(f"number of conversations in eval: {len(results.convs_by_id)}")
-    labeled_authors = sum(len(v) for v in author_labels_per_conversation.values())
-    print(f"total number of labeled authors: {labeled_authors}")
-    print(f"number of conversations in eval: {len(results.convs_by_id)}")
-    all_authors_in_eval = set(
-        chain(*[predictions["mst"].keys() for cid, predictions in results.author_predictions.items()]))
-    print(f"number of unique authors in eval: {len(all_authors_in_eval)}")
-    all_authors_in_core_eval = set(
-        chain(*[predictions.get("core", {}).keys() for cid, predictions in results.author_predictions.items()]))
-    print(f"number of unique authors in core: {len(all_authors_in_core_eval)}")
-    print("=========")
-    print(f"number of conversations with single author: {len(results.single_author_conv)}")
-    print(f"number of conversations with empty core: {len(results.empty_core)}")
-    print(f"number of conversations with op not in core: {len(results.op_not_in_core)}")
-    print(f"number of conversations with too large core: {len(results.large_graphs)}")
-    print(f"number of conversations with too small cut value: {len(results.too_small_cut_value)}")
-    print(f"number of unlabeled conversations: {len(results.unlabeled_conversations)}")
-    print(f"number of conversations with unlabeled op: {len(results.unlabeled_op)}")
-    print(f"number of conversations with insufficient labeled authors: {len(results.insufficient_author_labels)}")
 
 
 if __name__ == "__main__":
@@ -392,9 +315,13 @@ if __name__ == "__main__":
 
     convs = load_conversations(args.dataset, args.path)
     author_labels_per_conversation, posts_labels = get_4forums_labels(args.path)
-    evalutils = EvaluationUtils(author_labels_per_conversation, posts_labels)
-    results = process_stance(convs, evalutils)
-    show_results(results)
+    print(
+        f"total number of conversations with labeled authors (in all topics): {len(author_labels_per_conversation)}")
+    labeled_authors = sum(len(v) for v in author_labels_per_conversation.values())
+    print(f"total number of labeled authors: {labeled_authors}")
+
+    results = process_stance(convs, author_labels_per_conversation)
+    results.show()
 
 
 
