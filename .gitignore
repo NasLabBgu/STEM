@@ -1,4 +1,17 @@
+# development files
 .idea/*
 **/__pycache__/*
 venv/*
 outputs/*
+experiments/notebooks/.ipynb_checkpoints/*
+
+
+# data files
+experiments/data/*
+.pickle
+.txt
+
+# general
+**/.DS_Store
+
+
