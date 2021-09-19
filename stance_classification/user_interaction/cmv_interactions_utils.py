@@ -1,25 +1,42 @@
-from typing import Union
+from typing import Union, Iterable
 
-from dataclasses import dataclass
-
-from utils import find_user_mentions, strip_mention_prefix
+from conversant.conversation import Conversation, NodeData
+from stance_classification.utils import strip_quote_symbols, is_source_of_quote, find_user_mentions, \
+    strip_mention_prefix
 
 DELTA_BOT_USER = "DeltaBot"
 CONFIRMED_AWARD_PREFIX = "Confirmed:"
 REJECTED_AWARD_PREFIX = "This delta has been rejected"
 
+AUTHOR_FIELD = "author"
+TEXT_FIELD = "text"
+TIMESTAMP_FIELD = "timestamp"
 
 
-@dataclass
-class UsersInteraction:
-    num_replies: int = 0
-    num_mentions: int = 0
-    num_quotes: int = 0
-    num_confirmed_delta_awards: int = 0
-    num_rejected_delta_awards: int = 0
+def find_quote_author(quote: str,
+                      tree: Conversation,
+                      preferred_nodes: Iterable[NodeData] = None,
+                      quote_timestamp: int = None
+                      ) -> Union[str, None]:
+    # clean quote symbols
+    quote_text = strip_quote_symbols(quote)
+
+    if preferred_nodes is not None:
+        for node in preferred_nodes:
+            node_data = node.data
+            if is_source_of_quote(quote_text, node_data[TEXT_FIELD]):
+                return node_data[AUTHOR_FIELD]
+
+    for depth, node in tree.iter_conversation():
+        node_data = node.data
+        if quote_timestamp and (node_data[TIMESTAMP_FIELD] >= quote_timestamp):
+            continue
+
+        if is_source_of_quote(quote_text, node_data[TEXT_FIELD]):
+            return node_data[AUTHOR_FIELD]
 
 
-def check_delta_award(author: str, text: str):
+def check_delta_award(author: str, text: str) -> int:
     """
     check if the given text and author imply on delta award
     :param text:
@@ -36,7 +53,7 @@ def check_delta_award(author: str, text: str):
     return 0
 
 
-def find_award_recipient(delta_bot_text: str, award_status: int = None) -> Union[str, None]:
+def find_award_recipient(delta_bot_text: str, award_status: int = -1) -> Union[str, None]:
     """
     extract the name of the awarded user.
     :param delta_bot_text: the award confirmation or rejection text by DeltaBot
@@ -63,6 +80,3 @@ def find_award_recipient(delta_bot_text: str, award_status: int = None) -> Union
     award_recipient_mention = mentions[0]
     username = strip_mention_prefix(delta_bot_text[slice(*award_recipient_mention)])
     return username
-
-
-
