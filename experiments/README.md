@@ -46,9 +46,9 @@ and some commands for example
 ## Running experiment 2
 ### Combining (the original) Zero-Shot stance predictions (put reference)
 
-1. Run the `prepare2zs.py` script to prepare the dataset for the zer-shot predictions. \
-2. he run te zero-shot predictions. (dedicated script)\
-3. Then take the results and merge with the corresponding dataset (that was prepared for experiment 1) (dedicted script)\
+1. Run the `prepare2zs.py` script to prepare the dataset for the zer-shot predictions.
+2. he run te zero-shot predictions. (dedicated script)
+3. Then take the results and merge with the corresponding dataset (that was prepared for experiment 1) (dedicted script)
 4. run experiment 2 using the merged dataset
 
 
