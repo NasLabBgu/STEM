@@ -31,10 +31,10 @@ optional arguments:
 
 For example, executing the following command:
 ```shell
-$ python -m experiments.scripts.prepare-dataset 4forums experiments/data/fourforums experiments/data/fourforums/4forum.csv
+$ python -m experiments.scripts.prepare-dataset 4forums experiments/data/fourforums experiments/data/fourforums/4forums.csv
 ```
 
-will be resulted with the prepared dataset at `experiments/data/fourforums/4forum.csv` of _fourforums_ for the experiments
+will be resulted with the prepared dataset at `experiments/data/fourforums/4forums.csv` of _fourforums_ for the experiments
 
 ## Running experiment 1
 ### Conversation structure only
@@ -46,7 +46,7 @@ and some commands for example
 ## Running experiment 2
 ### Combining (the original) Zero-Shot stance predictions (put reference)
 
-1. Run the `prepare2zs.py` script to prepare the dataset for the zer-shot predictions.
+1. Run the `convert2zs.py` script to prepare the dataset for the zer-shot predictions.
 2. he run te zero-shot predictions. (dedicated script)
 3. Then take the results and merge with the corresponding dataset (that was prepared for experiment 1) (dedicted script)
 4. run experiment 2 using the merged dataset

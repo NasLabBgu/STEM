@@ -46,11 +46,11 @@ def get_parent_post_id(dataset_name: str, row: pd.Series) -> Union[str, int]:
     if row["is_absolute_root"]:
         return -1
 
-    return f"{dataset_name}_{row['full_conv_id']}_{int(row['parent_id'])}"
+    return f"{dataset_name}_{row['conversation_id']}_{int(row['parent_id'])}"
 
 
 def transform_dataframe(data: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
-    absolute_ids = data.apply(lambda row: f"{dataset_name}_{row['full_conv_id']}_{row['node_id']}", axis=1)
+    absolute_ids = data.apply(lambda row: f"{dataset_name}_{row['conversation_id']}_{row['node_id']}", axis=1)
     data.insert(0, "post_id", absolute_ids)
     del data["node_id"]
 
@@ -59,6 +59,7 @@ def transform_dataframe(data: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
     del data["parent_id"]
 
     data["text"] = data["data.text"]
+    data.loc[data["text"].str.len() == 0, "text"] = "[EMPTY]"
     data["topic_id"] = data["data.topic"]
     data["topic_name"] = data["data.topic_name"]
     data["quote_source_ids"] = data["data.quote_source_ids"]

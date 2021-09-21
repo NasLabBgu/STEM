@@ -1,72 +1,92 @@
-#%%
-from typing import Dict, TextIO, Tuple, Iterable
+# %%
+from functools import partial
+from itertools import chain
+from multiprocessing import Pool
+from typing import Dict, TextIO, Tuple, Iterable, Sequence, List, Callable
 
 import json
 import argparse
 
+import numpy as np
 import pandas as pd
 
 from tqdm.auto import tqdm
 
 from experiments.utils.text_utils import parse_text, get_tokens_with_stopwords
 
-
-# base_dir = "/Users/ronpick/studies/stance/alternative/createdebate_released"
-from conversant.conversation import Conversation
-from conversant.conversation.conversation_utils import conversation_to_dataframe
-from experiments.datahandlers.loaders import load_conversations
+ZS_COLS_ORDER = ["author", "post", "ori_topic", "ori_id", "new_topic", "label", "type_idx", "new_id", "arc_id",
+                 "text", "pos_text", "text_s", "topic", "topic_str", "seen?", "contains_topic?"]
 
 
-def conversations_to_dataframe(conversations: Iterable[Conversation]) -> pd.DataFrame:
-    df = pd.concat(map(conversation_to_dataframe, conversations))
-    return df
+def load_data(path: str) -> pd.DataFrame:
+    return pd.read_csv(path)
 
 
-def convert_to_zs_format(conversations: Iterable[Conversation]) -> pd.DataFrame:
-    records = []
-    for conv in tqdm(conversations):
-        conv_df = conversation_to_dataframe(conv)
-        for _, record in conv_df.iterrows():
-            text = record["data.text"]
-            parsed_doc = parse_text(text)
-            tokens, pos = get_tokens_with_stopwords(parsed_doc)
-            tokens_str = json.dumps(tokens)
-            pos_str = json.dumps(pos)
-            text_s = " ".join(" ".join(sent) + "." for sent in tokens)
-            topic_name = record["data.topic_name"]
-            if topic_name is None:
-                continue
+def chunk(seq: Sequence, size: int) -> Iterable[Sequence]:
+    yield from (seq[pos: pos + size] for pos in range(0, len(seq), size))
 
-            topics = [topic_name]  # get_relevant_nps_from_text(parsed_doc)
-            for topic in topics:
-                topic_str = topic #" ".join(topic)
-                vast_record = {
-                    "author": record["data.author_id"],
-                    "post": text,
-                    "ori_topic": topic_str,
-                    "ori_id": None,
-                    "new_topic": topic_str,
-                    "label": -1,
-                    "type_idx": 1,
-                    "new_id": f"{record['data.post_id']}",
-                    "arc_id": None,
-                    "text": tokens_str,
-                    "pos_text": pos_str,
-                    "text_s": text_s,
-                    "topic": json.dumps(topic),
-                    "topic_str": topic_str,
-                    "seen?": 0,
-                    "contains_topic?": (topic_str in text) if topic_str is not None else 0
-                }
-                records.append(vast_record)
 
-    return pd.DataFrame.from_records(records)
+def process_chunk(seq: Sequence, func: Callable) -> list:
+    return list(map(func, seq))
+
+
+def apply_parallel(func: Callable, seq: Sequence, chunksize: int = 100) -> pd.Series:
+    processed: List = [None for _ in range(len(seq))]
+    with Pool() as p:
+        with tqdm(total=len(seq)) as pbar:
+            chunks = chunk(seq, chunksize)
+            i = 0
+            process = partial(process_chunk, func=func)
+            for processed_chunk in p.imap(process, chunks):
+                pbar.update(len(processed_chunk))
+                for element in processed_chunk:
+                    processed[i] = element
+                    i += 1
+
+    return pd.Series(processed)
+
+
+def convert_to_zs_format(data: pd.DataFrame) -> pd.DataFrame:
+    text = data["text"]
+    print("Parsing Texts")
+    parsed_doc = apply_parallel(parse_text, text, 100)
+    print("Extract tokens and post-tags")
+    tokens_with_pos = apply_parallel(get_tokens_with_stopwords, parsed_doc, 100)
+    tokens_with_pos = pd.DataFrame(tokens_with_pos.tolist(), index=data.index)
+    tokens = tokens_with_pos[0]
+    pos = tokens_with_pos[1]
+    tokens_str = tokens.apply(json.dumps)
+    pos_str = pos.apply(json.dumps)
+    text_s = tokens.apply(lambda token_list: " ".join(" ".join(sent) + "." for sent in token_list))
+    topic_name = data["topic_name"]
+    topic_tokens = topic_name.str.split()
+    topic_cleaned = topic_name  # currently doesn't need more processing
+
+    renames = {
+        "post_id": "ori_id",
+        "topic_name": "ori_topic",
+    }
+    data = data.rename(columns=renames)
+
+    data.loc[:, "post"] = text
+    data.loc[:, "new_topic"] = topic_name
+    data.loc[:, "label"] = -1
+    data.loc[:, "type_idx"] = 1
+    data.loc[:, "new_id"] = np.arange(len(data))
+    data.loc[:, "arc_id"] = None
+    data.loc[:, "text"] = tokens_str
+    data.loc[:, "pos_text"] = pos_str
+    data.loc[:, "text_s"] = text_s
+    data.loc[:, "topic"] = topic_tokens.apply(json.dumps)
+    data.loc[:, "topic_str"] = topic_cleaned
+    data.loc[:, "seen?"] = 0
+    data.loc[:, "contains_topic?"] = topic_tokens.apply(
+        lambda token_list: int(all(token in text for token in token_list)))
+    return data[ZS_COLS_ORDER]
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("dataset", type=str,
-                        help="name of the dataset to prepare")
     parser.add_argument("path", type=str,
                         help="Path to the IAC directory containing all dataset as downloaded and extracted")
     parser.add_argument("out", type=str,
@@ -74,6 +94,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    convs = load_conversations(args.dataset, args.path)
-    zs_df = convert_to_zs_format(convs)
-    zs_df.to_csv(args.out)
+    print("Loading data")
+    df = load_data(args.path)
+    print(f"Loaded dataset with shape {df.shape}")
+    print("Processing and converting dataset")
+    zs_df = convert_to_zs_format(df)
+    print(f"Writing dataset to file: {args.out}")
+    zs_df.to_csv(args.out, index=False)
+    print("Done!")
