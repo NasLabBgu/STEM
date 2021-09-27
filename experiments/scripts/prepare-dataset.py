@@ -1,10 +1,13 @@
-from typing import Iterable, Union
+import os
+from typing import Iterable, Union, Tuple, Dict, Any, List
 import argparse
 import pandas as pd
 from tqdm.auto import tqdm
+from itertools import groupby, starmap
 
-
-UNKNOWN_TOPIC_ID = -1
+from experiments.datahandlers.iac.fourforum_labels import AuthorLabel
+from experiments.datahandlers.loaders import load_conversations
+from experiments.datahandlers.iac.fourforum_labels import load_author_labels as load_4forums_author_labels
 
 
 def up_to_root() -> str:
@@ -31,7 +34,14 @@ except:
 
 from conversant.conversation import Conversation
 from conversant.conversation.conversation_utils import conversation_to_dataframe
-from experiments.datahandlers.loaders import load_conversations
+
+
+UNKNOWN_TOPIC_ID = -1
+FOURFORUMS_DIR = "fourforums"
+FOURFORUMS_AUTHOR_LABELS_FILENAME = "mturk_author_stance.txt"
+
+LabelsByConversation = Dict[Any, Dict[Any, int]]
+PostLabels = Dict[Tuple[Any, Any], int]
 
 
 def conversations_to_dataframe(conversations: Iterable[Conversation]) -> pd.DataFrame:
@@ -66,6 +76,63 @@ def transform_dataframe(data: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
     relevant_columns = list(filter(lambda col: not col.startswith("data."), data.columns))
     return data[relevant_columns]
 
+# LABELS
+
+def create_author_labels_dict(labels: Iterable[AuthorLabel]) -> Dict[Any, int]:
+    return {l.author_id: l.stance - 2 for l in labels if l.stance is not None}
+
+
+def infer_posts_labels_from_authors(convs: List[Conversation], author_labels_per_conversation: LabelsByConversation) -> PostLabels:
+    post_labels = {}
+    for c in convs:
+        cid = c.id
+        authors_labels = author_labels_per_conversation.get(cid, None)
+        if authors_labels is None:
+            continue
+
+        conv_post_labels = {node.node_id: authors_labels.get(node.author) for _, node in c.iter_conversation()}
+        post_labels.update({(cid, k): v for k, v in conv_post_labels.items() if v is not None})
+
+    return post_labels
+
+
+def get_4forums_labels(data_dir: str) -> Tuple[LabelsByConversation, PostLabels]:
+    author_labels_path = os.path.join(data_dir, FOURFORUMS_AUTHOR_LABELS_FILENAME)
+    author_labels = list(load_4forums_author_labels(author_labels_path))
+
+    author_labels_per_conversation = groupby(author_labels, key=lambda a: a.discussion_id)
+    author_labels_per_conversation = starmap(lambda cid, labels: (cid, create_author_labels_dict(labels)), author_labels_per_conversation)
+    author_labels_per_conversation = filter(lambda cid_to_labels: len(cid_to_labels[1]) > 0, author_labels_per_conversation)
+    author_labels_per_conversation = dict(author_labels_per_conversation)
+
+    post_labels_per_conversation = infer_posts_labels_from_authors(convs, author_labels_per_conversation)
+    return author_labels_per_conversation, post_labels_per_conversation
+
+
+def add_labels(
+        df: pd.DataFrame,
+        post_labels: PostLabels,
+        author_labels_per_conversation: LabelsByConversation
+) -> pd.DataFrame:
+
+    def get_post_label(row: pd.Series) -> int:
+        conv_id = row["conversation_id"]
+        node_id = row["node_id"]
+        return post_labels.get((conv_id, node_id), -1)
+
+    def get_author_label(row: pd.Series) -> int:
+        conv_id = row["conversation_id"]
+        if conv_id not in author_labels_per_conversation:
+            return -1
+
+        conversation_labels = author_labels_per_conversation[conv_id]
+        author = row["author"]
+        return conversation_labels.get(author, -1)
+
+    df.loc[:, "post_label"] = df.apply(get_post_label, axis=1)
+    df.loc[:, "author_label"] = df.apply(get_author_label, axis=1)
+    return df
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -85,5 +152,7 @@ if __name__ == "__main__":
         convs = list(filter(lambda conv: conv.root.data["topic"] != -1, convs))
 
     df = conversations_to_dataframe(convs)
+    author_labels_per_conversation, post_labels_per_conversation = get_4forums_labels(args.path)
+    df = add_labels(df, post_labels_per_conversation, author_labels_per_conversation)
     df = transform_dataframe(df, args.dataset)
     df.to_csv(args.out, index=False)

@@ -18,6 +18,17 @@ ZS_COLS_ORDER = ["author", "post", "ori_topic", "ori_id", "new_topic", "label", 
                  "text", "pos_text", "text_s", "topic", "topic_str", "seen?", "contains_topic?"]
 
 
+topic_mapping = {
+    "gay": "gay marriage",
+    "abortion": "abortion legislation",
+    "gun": "gun control",
+    "climate": "climate change",
+    "death": "death penalty",
+    "existence": "god existence",
+    "marijuana": "marijuana legalization"
+}
+
+
 def load_data(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
@@ -59,8 +70,9 @@ def convert_to_zs_format(data: pd.DataFrame) -> pd.DataFrame:
     pos_str = pos.apply(json.dumps)
     text_s = tokens.apply(lambda token_list: " ".join(" ".join(sent) + "." for sent in token_list))
     topic_name = data["topic_name"]
-    topic_tokens = topic_name.str.split()
-    topic_cleaned = topic_name  # currently doesn't need more processing
+    new_topic = topic_mapping.get(topic_name, topic_name)
+    topic_tokens = new_topic.str.split()
+    topic_cleaned = new_topic  # currently doesn't need more processing
 
     renames = {
         "post_id": "ori_id",
@@ -69,8 +81,8 @@ def convert_to_zs_format(data: pd.DataFrame) -> pd.DataFrame:
     data = data.rename(columns=renames)
 
     data.loc[:, "post"] = text
-    data.loc[:, "new_topic"] = topic_name
-    data.loc[:, "label"] = -1
+    data.loc[:, "new_topic"] = new_topic
+    data.loc[:, "label"] = data["post_label"] - 2
     data.loc[:, "type_idx"] = 1
     data.loc[:, "new_id"] = np.arange(len(data))
     data.loc[:, "arc_id"] = None
