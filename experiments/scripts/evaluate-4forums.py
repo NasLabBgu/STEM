@@ -1,6 +1,7 @@
 import time
+from functools import partial
 
-from typing import List, Dict, Iterable, Any, Tuple, Sequence, Set, NamedTuple, Union
+from typing import List, Dict, Iterable, Any, Tuple, Sequence, Set, NamedTuple, Union, Callable
 
 import os
 import argparse
@@ -17,7 +18,7 @@ from classifiers.greedy_stance_classifier import MSTStanceClassifier
 from classifiers.maxcut_stance_classifier import MaxcutStanceClassifier
 from conversant.conversation import Conversation
 
-from sklearn.metrics import accuracy_score, recall_score
+from sklearn.metrics import accuracy_score, recall_score, precision_score
 
 from conversation.parse import DataFrameConversationReader
 from experiments.datahandlers.iac.fourforum_interactions import FourForumInteractionsBuilder
@@ -28,18 +29,12 @@ from interactions.interactions_graph import PairInteractionsData
 FOURFORUMS_DIR = "fourforums"
 FOURFORUMS_AUTHOR_LABELS_FILENAME = "mturk_author_stance.txt"
 
-# """abortion = 3
-#        evolution = 7
-#        gay marriage = 8
-#        gun control = 9
-#        """
-RELEVANT_TOPICS = {3, 7, 8, 9}
+
 MST_MODEL = "MST"
 CORE_MODEL = "2-CORE"
 FULL_MODEL = "FULL"
 
 MODELS = [MST_MODEL, CORE_MODEL, FULL_MODEL]
-
 
 # type aliases
 
@@ -74,11 +69,28 @@ def get_labels(conv: Conversation, label_field: str) -> Dict[Any, int]:
 
 
 def get_author_labels(conv: Conversation) -> Dict[Any, int]:
-    return get_labels(conv, "author_label")
+    labels = {}
+    for depth, node in conv.iter_conversation():
+        label = node.data["author_label"]
+        if label >= 0:
+            labels[node.author] = label
+
+    return labels
 
 
 def get_posts_labels(conv: Conversation) -> Dict[Any, int]:
-    return get_labels(conv, "post_label")
+    labels = {}
+    for depth, node in conv.iter_conversation():
+        label = node.data["post_label"]
+        if label >= 0:
+            labels[node.node_id] = label
+
+    return labels
+
+
+def get_zs_post_labels(path: str) -> Dict[Any, int]:
+    df = pd.read_csv(path)
+    return dict(zip(df["ori_id"], df["pred"]))
 
 
 # GRAPH UTILITIES
@@ -92,9 +104,12 @@ def get_ordered_candidates_for_pivot(graph: nx.Graph, weight_field: str = "weigh
     return list(map(itemgetter(0), sorted(node_centralities.items(), key=itemgetter(1), reverse=True)))
 
 
-def get_pivot_node(graph: nx.Graph, labeled_authors: Union[Set[Any], Dict[Any, Any]], weight_field: str = "weight") -> Any:
+def get_pivot_node(graph: nx.Graph, op: Any, weight_field: str = "weight") -> Any:
+    if op in graph:
+        return op
+
     candidates = get_ordered_candidates_for_pivot(graph, weight_field=weight_field)
-    return next(iter(filter(labeled_authors.__contains__, candidates)), None)
+    return candidates[0]
 
 
 # EVALUATION UTILITIES
@@ -108,16 +123,12 @@ def extend_preds(graph: nx.Graph, seed_node: Any, core_authors_preds: Dict[Any, 
     return extended_results
 
 
-def get_author_preds(clf: BaseStanceClassifier, pivot: Any, authors_labels: Dict[Any, int]) -> Dict[Any, int]:
-    support_label = authors_labels[pivot]
-    opposer_label = 1 - support_label
-    supporters = clf.get_supporters()
-    opposers = clf.get_complement()
+def get_author_preds(positive_authors: Set[Any], negative_authors: Set[Any]) -> Dict[Any, int]:
     preds = {}
-    for supporter in supporters:
-        preds[supporter] = support_label
-    for opposer in opposers:
-        preds[opposer] = opposer_label
+    for author in positive_authors:
+        preds[author] = 1
+    for author in negative_authors:
+        preds[author] = 0
 
     return preds
 
@@ -130,7 +141,7 @@ def get_maxcut_results(graph: InteractionsGraph, op: Any) -> MaxcutStanceClassif
 
 
 def get_greedy_results(graph: InteractionsGraph, op: Any) -> BaseStanceClassifier:
-    clf = MSTStanceClassifier() #weight_field=graph.WEIGHT_FIELD)
+    clf = MSTStanceClassifier()  # weight_field=graph.WEIGHT_FIELD)
     clf.set_input(graph.graph)
     clf.classify_stance(op)
     return clf
@@ -152,7 +163,7 @@ def align_gs_with_predictions(true_labels: Dict[Any, int], preds: Dict[Any, int]
 def predict_for_partition(true: List[int], preds: List[int]) -> Tuple[List[int], List[int]]:
     acc = accuracy_score(true, preds)
     if acc < 0.5:
-        preds = [1-l for l in preds]
+        preds = [1 - l for l in preds]
 
     return true, preds
 
@@ -161,16 +172,34 @@ def get_best_preds(true_labels: Dict[Any, int], pred_labels: Dict[Any, int]) -> 
     true, preds = align_gs_with_predictions(true_labels, pred_labels)
     acc = accuracy_score(true, preds)
     if acc < 0.5:
-        return {k: (1-  l) for k, l in pred_labels.items()}
+        return {key: (1 - label) for key, label in pred_labels.items()}
 
     return pred_labels
 
 
-def get_posts_preds(conv: Conversation, post_labels: Dict[Any, int], author_preds: Dict[Any, int]) -> Tuple[Dict[Any, int], Dict[Any, int]]:
+def decide_stance_groups_by_zs(conv: Conversation, supporters: Set[Any], opposers: Set[Any],
+                               zs_labels: Dict[Any, int]) -> Tuple[Set[Any], Set[Any]]:
+    """
+    decide which group has a positive stance, and each group has a negative stance.
+    return the two groups, where the negative group first, followed by the positive group
+    """
+    supported_posts = map(lambda n: n[1].node_id, filter(lambda n: n[1].author in supporters, conv.iter_conversation()))
+    opposed_posts = map(lambda n: n[1].node_id, filter(lambda n: n[1].author in opposers, conv.iter_conversation()))
+
+    supporters_stance_sum = sum(map(lambda x: (2 * x) - 1, map(zs_labels.get, supported_posts)))
+    opposers_stance_sum = sum(map(lambda x: (2 * x) - 1, map(zs_labels.get, opposed_posts)))
+
+    if supporters_stance_sum > opposers_stance_sum:
+        return opposers, supporters
+
+    return supporters, opposers
+
+
+def get_posts_preds(conv: Conversation, post_labels: Dict[Any, int], author_preds: Dict[Any, int]) -> Tuple[
+    Dict[Any, int], Dict[Any, int]]:
     posts_true, posts_pred = {}, {}
-    conv_id = conv.id
     for depth, node in conv.iter_conversation():
-        label = post_labels.get((conv_id, node.node_id), None)
+        label = post_labels.get(node.node_id)
         if label is None:
             continue
 
@@ -234,10 +263,20 @@ class ExperimentResults(NamedTuple):
         print(f"number of conversations with insufficient labeled authors: {len(self.insufficient_author_labels)}")
 
 
+def is_significant_interactions(graph: InteractionsGraph) -> bool:
+    # check that the structure is complex
+    if not nx.is_k_regular(graph.graph, 2):
+        return True
+
+    # check that not all nteractions have the same weight
+    interactions_weights = (i.interactions["weight"] for i in graph.interactions)
+    return len(set(interactions_weights)) > 1
+
+
 def process_stance(
         conversations: Iterable[Conversation],
-        # author_labels_per_conversation: LabelsByConversation,
-        naive_results: bool = False
+        decide_stance_groups: Callable[[Conversation, Set[Any], Set[Any]], Tuple[Set[Any], Set[Any]]],
+        naive_results: bool = False,
 ) -> ExperimentResults:
     interactions_parser = FourForumInteractionsBuilder()
     results = ExperimentResults()
@@ -245,18 +284,9 @@ def process_stance(
     results.total_time.start()
     for i, conv in enumerate(conversations):
         results.total_count.increment()
-        topic = conv.root.data["topic_name"]
-        # if topic not in RELEVANT_TOPICS:
-        #     continue
 
-        results.on_topic_count.increment()
-        authors_labels = get_author_labels(conv)
-        if len(authors_labels) is None:
-            results.unlabeled_conversations.append(i)
-            continue
-
-        if len(authors_labels) == 0:
-            results.insufficient_author_labels.append(i)
+        if conv.number_of_participants <= 1:
+            results.single_author_conv.append(i)
             continue
 
         interaction_graph = interactions_parser.build(conv)
@@ -264,18 +294,13 @@ def process_stance(
         zero_edges = [(v, u) for v, u, d in interaction_graph.graph.edges(data=True) if d["weight"] == 0]
         interaction_graph.graph.remove_edges_from(zero_edges)
 
-        if conv.number_of_participants <= 1:
-            results.single_author_conv.append(i)
-            continue
-
         results.convs_by_id[conv.id] = conv
         results.full_graphs[conv.id] = interaction_graph
 
-        pivot_node = get_pivot_node(interaction_graph.graph, authors_labels, weight_field="weight")
-        results.pivot_nodes[conv.id] = pivot_node
-
-        mst = get_greedy_results(interaction_graph, pivot_node)
-        preds = get_author_preds(mst, pivot_node, authors_labels=authors_labels)
+        pivot = get_pivot_node(interaction_graph.graph, conv.root.node_id)
+        mst = get_greedy_results(interaction_graph, pivot)
+        negative, positive = decide_stance_groups(conv, mst.get_supporters(), mst.get_complement())
+        preds = get_author_preds(negative, positive)
         results.author_predictions[conv.id] = {MST_MODEL: preds}
 
         if naive_results:
@@ -287,25 +312,26 @@ def process_stance(
             results.empty_core.append(i)
             continue
 
-        components = list(nx.connected_components(core_interactions.graph))
-        core_interactions = core_interactions.get_subgraph(components[0])
-        pivot_node = get_pivot_node(core_interactions.graph, authors_labels, weight_field="weight")
-        maxcut = get_maxcut_results(core_interactions, pivot_node)
-        if maxcut.cut_value < 3:
+        if not is_significant_interactions(core_interactions):
             results.too_small_cut_value.append(i)
             continue
 
+        components = list(nx.connected_components(core_interactions.graph))
+        core_interactions = core_interactions.get_subgraph(components[0])
+        pivot = get_pivot_node(core_interactions.graph, conv.root.node_id)
+        maxcut = get_maxcut_results(core_interactions, pivot)
         results.maxcut_results[conv.id] = maxcut
 
         # if core_interactions.graph.order() > 120:
         #     large_graphs.append(conv)
         #     continue
 
-        preds = get_author_preds(maxcut, pivot_node, authors_labels=authors_labels)
+        negative, positive = decide_stance_groups(conv, maxcut.get_supporters(), maxcut.get_complement())
+        preds = get_author_preds(positive, negative)
         results.author_predictions[conv.id][CORE_MODEL] = preds
 
         # get extended results
-        preds = extend_preds(interaction_graph.graph, pivot_node, preds)
+        preds = extend_preds(interaction_graph.graph, pivot, preds)
         results.author_predictions[conv.id][FULL_MODEL] = preds
 
     results.total_time.end()
@@ -314,7 +340,7 @@ def process_stance(
 
 def results_to_df(results: ExperimentResults) -> pd.DataFrame:
     records = []
-    for conv_id, predictions in results.author_predictions.items():
+    for conv_id, predictions in tqdm(results.author_predictions.items()):
         conv = results.convs_by_id[conv_id]
         n_authors = conv.number_of_participants
         topic = conv.root.data["topic_name"]
@@ -326,9 +352,7 @@ def results_to_df(results: ExperimentResults) -> pd.DataFrame:
             if author_preds is None:
                 continue
 
-            author_preds_best = get_best_preds(author_labels, author_preds)
             posts_preds, posts_preds = get_posts_preds(conv, all_posts_labels, author_preds)
-            posts_preds_best = get_best_preds(posts_preds, posts_preds)
             for _, node in conv.iter_conversation():
                 author_label = author_labels.get(node.author)
                 post_label = all_posts_labels.get(node.node_id)
@@ -337,81 +361,115 @@ def results_to_df(results: ExperimentResults) -> pd.DataFrame:
 
                 record = {"node_id": node.node_id, "author": node.author, "conv_id": conv_id, "topic": topic,
                           "authors": n_authors, "posts": conv.size, "model": model,
-                          "author_label": author_label, "author_pred": author_preds.get(node.author), "author_pred_best": author_preds_best.get(node.author),
-                          "post_label": post_label, "post_pred": posts_preds.get(node.node_id), "post_pred_best": posts_preds_best.get(node.node_id)}
+                          "author_label": author_label, "author_pred": author_preds.get(node.author),
+                          "post_label": post_label, "post_pred": posts_preds.get(node.node_id),
+                          }
 
                 records.append(record)
 
     return pd.DataFrame.from_records(records)
 
 
-def get_metrics(labels: Dict[Any, int], preds: Dict[Any, int], suffix: str = None, best_group_label_assignment: bool = False) -> dict:
+def get_metrics(y_true: Sequence[int], y_pred: Sequence[int], suffix: str = None) -> dict:
     if suffix is None:
         suffix = ""
     else:
         suffix = f"-{suffix}"
 
-    if best_group_label_assignment:
-        preds = get_best_preds(labels, preds)
-
-    y_true, y_pred = align_gs_with_predictions(labels, preds)
     return {
         f"support": len(y_true),
         f"accuracy{suffix}": accuracy_score(y_true, y_pred),
         f"recall-1{suffix}": recall_score(y_true, y_pred, pos_label=1),
-        f"recall-0{suffix}": recall_score(y_true, y_pred, pos_label=0)
+        f"precision-1{suffix}": precision_score(y_true, y_pred, pos_label=1),
+        f"recall-0{suffix}": recall_score(y_true, y_pred, pos_label=0),
+        f"precision-0{suffix}": precision_score(y_true, y_pred, pos_label=0)
     }
 
 
-def eval_results(results: ExperimentResults) -> pd.DataFrame:
+def eval_results_per_conversation(results_df: pd.DataFrame) -> pd.DataFrame:
     records = []
-    for conv_id, predictions in results.author_predictions.items():
-        conv = results.convs_by_id[conv_id]
-        n_authors = conv.number_of_participants
-        topic = conv.root.data["topic_name"]
-        author_labels = get_author_labels(conv)
-        all_posts_labels = get_posts_labels(conv)
+    results_df = results_df.dropna()
+    for (conv_id, model), conv_df in results_df.groupby(["conv_id", "model"]):
+        topic = conv_df.iloc[0]["topic"]
+        record = {"conv_id": conv_id, "topic": topic, "model": model}
 
-        for model in MODELS:
-            author_preds = predictions.get(model, None)
-            if author_preds is None:
-                continue
+        y_true, y_pred = conv_df["author_label"], conv_df["author_pred"]
+        record.update(get_metrics(y_true, y_pred, suffix="author"))
 
-            record = {"conv_id": conv_id, "topic": topic, "authors": n_authors, "posts": conv.size, "model": model}
-
-            # author level metrics
-            record.update(get_metrics(author_labels, author_preds, suffix="author"))
-            record.update(get_metrics(author_labels, author_preds, suffix="author-best", best_group_label_assignment=True))
-
-            # posts level metrics
-            posts_labels, posts_preds = get_posts_preds(conv, all_posts_labels, author_preds)
-            record.update(get_metrics(posts_labels, posts_preds, suffix="post"))
-            record.update(get_metrics(posts_labels, posts_preds, suffix="post-best", best_group_label_assignment=True))
-
-            records.append(record)
+        y_true, y_pred = conv_df["post_label"], conv_df["post_pred"]
+        record.update(get_metrics(y_true, y_pred, suffix="post"))
+        records.append(record)
 
     return pd.DataFrame.from_records(records)
 
 
+def get_metric_columns(eval_df: pd.DataFrame) -> List[str]:
+    return [col for col in eval_df.columns if (col.startswith("acc") or col.startswith("recall") or col.startswith("prec"))]
+
+
+def eval_results_per_topic(conv_eval_df: pd.DataFrame) -> pd.DataFrame:
+    metric_columns = get_metric_columns(conv_eval_df)
+    records = []
+    for (topic, model), topic_df in conv_eval_df.groupby(["topic", "model"]):
+        record = {"topic": topic, "model": model, "convs": len(topic_df)}
+        for metric in metric_columns:
+            record.update({
+              f"{metric}-macro": topic_df[metric].mean(),
+              f"{metric}-std": topic_df[metric].std(),
+              f"{metric}-weighted": np.average(topic_df[metric], weights=topic_df["support"])
+            })
+        records.append(record)
+
+    return pd.DataFrame.from_records(records)
+
+
+def is_relevant_conv(conv: Conversation) -> bool:
+    return bool(get_author_labels(conv))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("dataset", type=str,
-                        help="name of the dataset to prepare")
-    parser.add_argument("path", type=str,
-                        help="Path to the IAC directory containing all dataset as downloaded and extracted")
+    subparsers = parser.add_subparsers(dest="action")
+
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument("--results_path", "-r", type=str, required=True,
+                               help="path of the intermediate result file (pred per post)")
+    parent_parser.add_argument("--outpath", "-o", type=str,
+                               help="path of the eval output file (eval per topic)")
+
+    process_parser = subparsers.add_parser("process", parents=[parent_parser])
+    process_parser.add_argument("path", type=str,
+                                help="Path to the IAC directory containing all dataset as downloaded and extracted")
+
+    eval_parser = subparsers.add_parser("eval", parents=[parent_parser])
 
     args = parser.parse_args()
 
-    convs = load_conversations_from_dataframe(args.path)
-    results = process_stance(convs)
-    results.show()
+    if args.action == "process":
+        zero_shot_labels = get_zs_post_labels("../data/fourforums/4forums-preds.compact.csv")
+        convs = load_conversations_from_dataframe(args.path)
+        convs = filter(is_relevant_conv, convs)
+        decide_stance_groups = partial(decide_stance_groups_by_zs, zs_labels=zero_shot_labels)
+        results = process_stance(convs, decide_stance_groups)
+        results.show()
 
-    results_df = results_to_df(results)
-    results_df.to_csv("4forums-maxcut-results.csv")
+        print("convert results to detailed_df")
+        results_df = results_to_df(results)
+        results_df.to_csv(args.results_path, index=False)
 
-    eval_df = eval_results(results)
-    eval_df.to_csv("4forums-eval.csv")
+    elif args.action == "eval":
+        results_df = pd.read_csv(args.results_path)
+
+    else:
+        raise RuntimeError("should not get here - no such option")
+
+    print("evaluate_results")
+    conv_eval_df = eval_results_per_conversation(results_df)
+    conv_eval_df.to_csv("4forums-eval-conv.csv")
+
+    eval_df = eval_results_per_topic(conv_eval_df)
+    if args.outpath is not None:
+        print(f"save eval results to {args.outpath}")
+        eval_df.to_csv(args.outpath, index=False)
+
     print(eval_df)
-
-
-
