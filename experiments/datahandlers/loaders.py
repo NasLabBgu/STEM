@@ -1,8 +1,10 @@
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Iterable
 
+import pandas as pd
 from tqdm.auto import tqdm
 
 from conversant.conversation import Conversation
+from conversation.parse import DataFrameConversationReader
 
 from experiments.datahandlers.iac.fourforum_data import \
     load_post_records as load_4forums_post_records,\
@@ -28,3 +30,7 @@ def load_conversations(dataset_name: str, basedir: str) -> List[Conversation]:
         raise ValueError(f"Unknown dataset name: {dataset_name}. must be one of f{list(loaders.keys())}")
 
     return load_4forums_conversations(basedir)
+
+
+
+

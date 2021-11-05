@@ -4,7 +4,7 @@ from typing import List, Dict, Iterable, Any, Tuple, Sequence, Set, NamedTuple, 
 
 import os
 import argparse
-from itertools import groupby, starmap, chain
+from itertools import groupby, starmap, chain, islice
 from operator import itemgetter
 
 import numpy as np
@@ -17,13 +17,10 @@ from classifiers.greedy_stance_classifier import MSTStanceClassifier
 from classifiers.maxcut_stance_classifier import MaxcutStanceClassifier
 from conversant.conversation import Conversation
 
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, recall_score
 
-
-from data.iac.fourforum_labels import load_author_labels as load_4forums_author_labels
+from conversation.parse import DataFrameConversationReader
 from experiments.datahandlers.iac.fourforum_interactions import FourForumInteractionsBuilder
-from experiments.datahandlers.iac.fourforum_labels import AuthorLabel
-from experiments.datahandlers.loaders import load_conversations
 from experiments.utils import IncrementableInt, TimeMeasure
 from interactions import InteractionsGraph
 from interactions.interactions_graph import PairInteractionsData
@@ -37,6 +34,11 @@ FOURFORUMS_AUTHOR_LABELS_FILENAME = "mturk_author_stance.txt"
 #        gun control = 9
 #        """
 RELEVANT_TOPICS = {3, 7, 8, 9}
+MST_MODEL = "MST"
+CORE_MODEL = "2-CORE"
+FULL_MODEL = "FULL"
+
+MODELS = [MST_MODEL, CORE_MODEL, FULL_MODEL]
 
 
 # type aliases
@@ -44,37 +46,39 @@ RELEVANT_TOPICS = {3, 7, 8, 9}
 LabelsByConversation = Dict[Any, Dict[Any, int]]
 PostLabels = Dict[Any, Dict[Any, int]]
 
-
-# LOADER AND INFER LABELS
-def create_author_labels_dict(labels: Iterable[AuthorLabel]) -> Dict[Any, int]:
-    return {l.author_id: l.stance for l in labels if l.stance is not None}
-
-
-def infer_posts_labels_from_authors(convs: List[Conversation], author_labels_per_conversation: LabelsByConversation) -> PostLabels:
-    post_labels = {}
-    for c in convs:
-        cid = c.id
-        authors_labels = author_labels_per_conversation.get(cid, None)
-        if authors_labels is None:
-            continue
-
-        conv_post_labels = {node.node_id: authors_labels.get(node.author) for _, node in c.iter_conversation()}
-        post_labels.update({(cid, k): v for k, v in conv_post_labels.items() if v is not None})
-
-    return post_labels
+# LOADING CONVERSATIONS
+fields_mapping = {
+    "node_id": "post_id",
+    "author": "author",
+    "timestamp": "timestamp",
+    "parent_id": "parent_post_id"
+}
 
 
-def get_4forums_labels(data_dir: str) -> Tuple[LabelsByConversation, PostLabels]:
-    author_labels_path = os.path.join(data_dir, FOURFORUMS_AUTHOR_LABELS_FILENAME)
-    author_labels = list(load_4forums_author_labels(author_labels_path))
+def load_conversations_from_dataframe(path: str) -> Iterable[Conversation]:
+    df = pd.read_csv(path)
+    parser = DataFrameConversationReader(fields_mapping, conversation_id_column="conversation_id")
+    groups = df.groupby("conversation_id")
+    for cid, raw_conversation in tqdm(groups, total=groups.ngroups):
+        yield parser.parse(raw_conversation, conversation_id=cid)
 
-    author_labels_per_conversation = groupby(author_labels, key=lambda a: a.discussion_id)
-    author_labels_per_conversation = starmap(lambda cid, labels: (cid, create_author_labels_dict(labels)), author_labels_per_conversation)
-    author_labels_per_conversation = filter(lambda cid_to_labels: len(cid_to_labels[1]) > 0, author_labels_per_conversation)
-    author_labels_per_conversation = dict(author_labels_per_conversation)
 
-    post_labels_per_conversation = infer_posts_labels_from_authors(convs, author_labels_per_conversation)
-    return author_labels_per_conversation, post_labels_per_conversation
+def get_labels(conv: Conversation, label_field: str) -> Dict[Any, int]:
+    labels = {}
+    for depth, node in conv.iter_conversation():
+        label = node.data[label_field]
+        if label >= 0:
+            labels[node.author] = label
+
+    return labels
+
+
+def get_author_labels(conv: Conversation) -> Dict[Any, int]:
+    return get_labels(conv, "author_label")
+
+
+def get_posts_labels(conv: Conversation) -> Dict[Any, int]:
+    return get_labels(conv, "post_label")
 
 
 # GRAPH UTILITIES
@@ -132,11 +136,12 @@ def get_greedy_results(graph: InteractionsGraph, op: Any) -> BaseStanceClassifie
     return clf
 
 
-def align_gs_with_predictions(authors_labels: Dict[Any, int], author_preds: Dict[Any, int]) -> Tuple[List[int], List[int]]:
+def align_gs_with_predictions(true_labels: Dict[Any, int], preds: Dict[Any, int]) -> Tuple[List[int], List[int]]:
     y_true, y_pred = [], []
-    for author, true_label in authors_labels.items():
-        pred = author_preds.get(author, None)
-        if pred is None: continue
+    for author, true_label in true_labels.items():
+        pred = preds.get(author, None)
+        if pred is None:
+            continue
 
         y_true.append(true_label)
         y_pred.append(pred)
@@ -166,9 +171,12 @@ def get_posts_preds(conv: Conversation, post_labels: Dict[Any, int], author_pred
     conv_id = conv.id
     for depth, node in conv.iter_conversation():
         label = post_labels.get((conv_id, node.node_id), None)
-        if label is None: continue
+        if label is None:
+            continue
+
         pred = author_preds.get(node.author, None)
-        if pred is None: continue
+        if pred is None:
+            continue
 
         posts_true[node.node_id] = label
         posts_pred[node.node_id] = pred
@@ -204,16 +212,16 @@ class ExperimentResults(NamedTuple):
 
     def show(self):
         print(f"total time took: {self.total_time.duration()}")
-        print(f"total number of conversations (in all topics): {len(convs)}")
+        print(f"total number of conversations (in all topics): {self.total_count}")
         print(f"total number of conversations (in the relevant topics): {self.on_topic_count}")
         print(
             f"total number of conversations with labeled authors (in the relevant topics): {self.on_topic_count.value - len(self.unlabeled_conversations)}")
         print(f"number of conversations in eval: {len(self.convs_by_id)}")
         all_authors_in_eval = set(
-            chain(*[predictions["mst"].keys() for cid, predictions in self.author_predictions.items()]))
+            chain(*[predictions[MST_MODEL].keys() for cid, predictions in self.author_predictions.items()]))
         print(f"number of unique authors in eval: {len(all_authors_in_eval)}")
         all_authors_in_core_eval = set(
-            chain(*[predictions.get("core", {}).keys() for cid, predictions in self.author_predictions.items()]))
+            chain(*[predictions.get(CORE_MODEL, {}).keys() for cid, predictions in self.author_predictions.items()]))
         print(f"number of unique authors in core: {len(all_authors_in_core_eval)}")
         print("=========")
         print(f"number of conversations with single author: {len(self.single_author_conv)}")
@@ -227,23 +235,23 @@ class ExperimentResults(NamedTuple):
 
 
 def process_stance(
-        conversations: Sequence[Conversation],
-        author_labels_per_conversation: LabelsByConversation,
+        conversations: Iterable[Conversation],
+        # author_labels_per_conversation: LabelsByConversation,
         naive_results: bool = False
 ) -> ExperimentResults:
     interactions_parser = FourForumInteractionsBuilder()
     results = ExperimentResults()
     print("Start processing authors stance")
     results.total_time.start()
-    for i, conv in tqdm(enumerate(conversations), total=len(conversations)):
+    for i, conv in enumerate(conversations):
         results.total_count.increment()
-        topic = conv.root.data["topic"]
-        if topic not in RELEVANT_TOPICS:
-            continue
+        topic = conv.root.data["topic_name"]
+        # if topic not in RELEVANT_TOPICS:
+        #     continue
 
         results.on_topic_count.increment()
-        authors_labels = author_labels_per_conversation.get(conv.id)
-        if authors_labels is None:
+        authors_labels = get_author_labels(conv)
+        if len(authors_labels) is None:
             results.unlabeled_conversations.append(i)
             continue
 
@@ -256,7 +264,7 @@ def process_stance(
         zero_edges = [(v, u) for v, u, d in interaction_graph.graph.edges(data=True) if d["weight"] == 0]
         interaction_graph.graph.remove_edges_from(zero_edges)
 
-        if len(conv.participants) <= 1:
+        if conv.number_of_participants <= 1:
             results.single_author_conv.append(i)
             continue
 
@@ -268,7 +276,7 @@ def process_stance(
 
         mst = get_greedy_results(interaction_graph, pivot_node)
         preds = get_author_preds(mst, pivot_node, authors_labels=authors_labels)
-        results.author_predictions[conv.id] = {"mst": preds}
+        results.author_predictions[conv.id] = {MST_MODEL: preds}
 
         if naive_results:
             continue
@@ -294,14 +302,95 @@ def process_stance(
         #     continue
 
         preds = get_author_preds(maxcut, pivot_node, authors_labels=authors_labels)
-        results.author_predictions[conv.id]["core"] = preds
+        results.author_predictions[conv.id][CORE_MODEL] = preds
 
         # get extended results
         preds = extend_preds(interaction_graph.graph, pivot_node, preds)
-        results.author_predictions[conv.id]["full"] = preds
+        results.author_predictions[conv.id][FULL_MODEL] = preds
 
     results.total_time.end()
     return results
+
+
+def results_to_df(results: ExperimentResults) -> pd.DataFrame:
+    records = []
+    for conv_id, predictions in results.author_predictions.items():
+        conv = results.convs_by_id[conv_id]
+        n_authors = conv.number_of_participants
+        topic = conv.root.data["topic_name"]
+        author_labels = get_author_labels(conv)
+        all_posts_labels = get_posts_labels(conv)
+
+        for model in MODELS:
+            author_preds = predictions.get(model, None)
+            if author_preds is None:
+                continue
+
+            author_preds_best = get_best_preds(author_labels, author_preds)
+            posts_preds, posts_preds = get_posts_preds(conv, all_posts_labels, author_preds)
+            posts_preds_best = get_best_preds(posts_preds, posts_preds)
+            for _, node in conv.iter_conversation():
+                author_label = author_labels.get(node.author)
+                post_label = all_posts_labels.get(node.node_id)
+                if (author_label or post_label) is None:
+                    continue
+
+                record = {"node_id": node.node_id, "author": node.author, "conv_id": conv_id, "topic": topic,
+                          "authors": n_authors, "posts": conv.size, "model": model,
+                          "author_label": author_label, "author_pred": author_preds.get(node.author), "author_pred_best": author_preds_best.get(node.author),
+                          "post_label": post_label, "post_pred": posts_preds.get(node.node_id), "post_pred_best": posts_preds_best.get(node.node_id)}
+
+                records.append(record)
+
+    return pd.DataFrame.from_records(records)
+
+
+def get_metrics(labels: Dict[Any, int], preds: Dict[Any, int], suffix: str = None, best_group_label_assignment: bool = False) -> dict:
+    if suffix is None:
+        suffix = ""
+    else:
+        suffix = f"-{suffix}"
+
+    if best_group_label_assignment:
+        preds = get_best_preds(labels, preds)
+
+    y_true, y_pred = align_gs_with_predictions(labels, preds)
+    return {
+        f"support": len(y_true),
+        f"accuracy{suffix}": accuracy_score(y_true, y_pred),
+        f"recall-1{suffix}": recall_score(y_true, y_pred, pos_label=1),
+        f"recall-0{suffix}": recall_score(y_true, y_pred, pos_label=0)
+    }
+
+
+def eval_results(results: ExperimentResults) -> pd.DataFrame:
+    records = []
+    for conv_id, predictions in results.author_predictions.items():
+        conv = results.convs_by_id[conv_id]
+        n_authors = conv.number_of_participants
+        topic = conv.root.data["topic_name"]
+        author_labels = get_author_labels(conv)
+        all_posts_labels = get_posts_labels(conv)
+
+        for model in MODELS:
+            author_preds = predictions.get(model, None)
+            if author_preds is None:
+                continue
+
+            record = {"conv_id": conv_id, "topic": topic, "authors": n_authors, "posts": conv.size, "model": model}
+
+            # author level metrics
+            record.update(get_metrics(author_labels, author_preds, suffix="author"))
+            record.update(get_metrics(author_labels, author_preds, suffix="author-best", best_group_label_assignment=True))
+
+            # posts level metrics
+            posts_labels, posts_preds = get_posts_preds(conv, all_posts_labels, author_preds)
+            record.update(get_metrics(posts_labels, posts_preds, suffix="post"))
+            record.update(get_metrics(posts_labels, posts_preds, suffix="post-best", best_group_label_assignment=True))
+
+            records.append(record)
+
+    return pd.DataFrame.from_records(records)
 
 
 if __name__ == "__main__":
@@ -313,15 +402,16 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    convs = load_conversations(args.dataset, args.path)
-    author_labels_per_conversation, posts_labels = get_4forums_labels(args.path)
-    print(
-        f"total number of conversations with labeled authors (in all topics): {len(author_labels_per_conversation)}")
-    labeled_authors = sum(len(v) for v in author_labels_per_conversation.values())
-    print(f"total number of labeled authors: {labeled_authors}")
-
-    results = process_stance(convs, author_labels_per_conversation)
+    convs = load_conversations_from_dataframe(args.path)
+    results = process_stance(convs)
     results.show()
+
+    results_df = results_to_df(results)
+    results_df.to_csv("4forums-maxcut-results.csv")
+
+    eval_df = eval_results(results)
+    eval_df.to_csv("4forums-eval.csv")
+    print(eval_df)
 
 
 

@@ -1,3 +1,6 @@
+import time
+
+
 class IncrementableInt:
     def __init__(self, init_value: int = 0):
         self.value = init_value
