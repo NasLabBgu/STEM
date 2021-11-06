@@ -186,6 +186,8 @@ def decide_stance_groups_by_zs(conv: Conversation, supporters: Set[Any], opposer
     supported_posts = list(map(lambda n: n[1].node_id, filter(lambda n: n[1].author in supporters, conv.iter_conversation())))
     opposed_posts = list(map(lambda n: n[1].node_id, filter(lambda n: n[1].author in opposers, conv.iter_conversation())))
 
+
+
     if strategy == "average":
         supporters_stance_sum = sum(map(zs_labels.get, supported_posts)) / len(supported_posts)
         opposers_stance_sum = sum(map(zs_labels.get, opposed_posts)) / len(opposed_posts)
@@ -404,11 +406,13 @@ def eval_results_per_conversation(results_df: pd.DataFrame) -> pd.DataFrame:
         topic = conv_df.iloc[0]["topic"]
         record = {"conv_id": conv_id, "topic": topic, "model": model}
 
+        y_true, y_pred = conv_df["post_label"], conv_df["post_pred"]
+        record.update(get_metrics(y_true, y_pred, suffix="post"))
+
+        conv_df = conv_df.drop_duplicates("author")
         y_true, y_pred = conv_df["author_label"], conv_df["author_pred"]
         record.update(get_metrics(y_true, y_pred, suffix="author"))
 
-        y_true, y_pred = conv_df["post_label"], conv_df["post_pred"]
-        record.update(get_metrics(y_true, y_pred, suffix="post"))
         records.append(record)
 
     return pd.DataFrame.from_records(records)
