@@ -178,16 +178,22 @@ def get_best_preds(true_labels: Dict[Any, int], pred_labels: Dict[Any, int]) -> 
 
 
 def decide_stance_groups_by_zs(conv: Conversation, supporters: Set[Any], opposers: Set[Any],
-                               zs_labels: Dict[Any, int]) -> Tuple[Set[Any], Set[Any]]:
+                               zs_labels: Dict[Any, int], strategy: str = "sum-neg") -> Tuple[Set[Any], Set[Any]]:
     """
     decide which group has a positive stance, and each group has a negative stance.
     return the two groups, where the negative group first, followed by the positive group
     """
-    supported_posts = map(lambda n: n[1].node_id, filter(lambda n: n[1].author in supporters, conv.iter_conversation()))
-    opposed_posts = map(lambda n: n[1].node_id, filter(lambda n: n[1].author in opposers, conv.iter_conversation()))
+    supported_posts = list(map(lambda n: n[1].node_id, filter(lambda n: n[1].author in supporters, conv.iter_conversation())))
+    opposed_posts = list(map(lambda n: n[1].node_id, filter(lambda n: n[1].author in opposers, conv.iter_conversation())))
 
-    supporters_stance_sum = sum(map(lambda x: (2 * x) - 1, map(zs_labels.get, supported_posts)))
-    opposers_stance_sum = sum(map(lambda x: (2 * x) - 1, map(zs_labels.get, opposed_posts)))
+    if strategy == "average":
+        supporters_stance_sum = sum(map(zs_labels.get, supported_posts)) / len(supported_posts)
+        opposers_stance_sum = sum(map(zs_labels.get, opposed_posts)) / len(opposed_posts)
+    elif strategy == "sum-neg":
+        supporters_stance_sum = sum(map(lambda x: (2 * x) - 1, map(zs_labels.get, supported_posts)))
+        opposers_stance_sum = sum(map(lambda x: (2 * x) - 1, map(zs_labels.get, opposed_posts)))
+    else:
+        raise ValueError(f"No such strategy: {strategy}")
 
     if supporters_stance_sum > opposers_stance_sum:
         return opposers, supporters
@@ -268,9 +274,14 @@ def is_significant_interactions(graph: InteractionsGraph) -> bool:
     if not nx.is_k_regular(graph.graph, 2):
         return True
 
-    # check that not all nteractions have the same weight
-    interactions_weights = (i.interactions["weight"] for i in graph.interactions)
-    return len(set(interactions_weights)) > 1
+    return False
+
+    # if graph.graph.size() >= 5:
+    #     return True
+    #
+    # # check that not all nteractions have the same weight
+    # interactions_weights = (i.interactions["weight"] for i in graph.interactions)
+    # return len(set(interactions_weights)) > 1
 
 
 def process_stance(
@@ -449,7 +460,7 @@ if __name__ == "__main__":
         zero_shot_labels = get_zs_post_labels("../data/fourforums/4forums-preds.compact.csv")
         convs = load_conversations_from_dataframe(args.path)
         convs = filter(is_relevant_conv, convs)
-        decide_stance_groups = partial(decide_stance_groups_by_zs, zs_labels=zero_shot_labels)
+        decide_stance_groups = partial(decide_stance_groups_by_zs, zs_labels=zero_shot_labels, strategy="average")
         results = process_stance(convs, decide_stance_groups)
         results.show()
 
