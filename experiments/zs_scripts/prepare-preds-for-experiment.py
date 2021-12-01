@@ -8,7 +8,7 @@ def load_preds(path: str) -> pd.DataFrame:
 
 
 def prepare_preds(preds: pd.DataFrame) -> pd.DataFrame:
-    return preds[["ori_id", "pred"]]
+    return preds[["ori_id", "pred", "pred-0", "pred-1", "pred-2"]]
 
 
 def write_preds(preds: pd.DataFrame, outpath: str):

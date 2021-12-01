@@ -58,7 +58,7 @@ class MaxcutStanceClassifier(BaseStanceClassifier):
     def clear(self):
         pass
 
-    def draw(self, layout_func: Callable = None, outpath: str = None, true_labels: Dict[Any, int] = None):
+    def draw(self, layout_func: Callable = None, outpath: str = None, true_labels: Dict[Any, int] = None, show: bool = False):
         leave = [e for e in self.graph.edges if e not in self.cut]
         # Close the old figure and open a new one.
         fig = new_figure()
@@ -67,7 +67,8 @@ class MaxcutStanceClassifier(BaseStanceClassifier):
         node_colors = [OP_COLOR if (n == self.op) else (SUPPORT_COLOR if n in self.supporters else OPPOSE_COLOR)
                        for n in self.graph.nodes]
 
-        op_label = true_labels[self.op]
+        true_labels = true_labels or {}
+        op_label = true_labels.get(self.op)
         gt_colors = []
         for node in self.graph.nodes:
             node_true_label = true_labels.get(node)
@@ -91,12 +92,12 @@ class MaxcutStanceClassifier(BaseStanceClassifier):
 
         # Draw the edges that are in the cut.
         nx.draw_networkx_edges(self.graph, pos, edgelist=self.cut, edge_color=CUT_EDGE_COLOR)
-        labels = {e: '{}'.format(self.graph[e[0]][e[1]]['weight']) for e in self.cut}
+        labels = {e: f"{self.graph[e[0]][e[1]]['weight']:.2f}" for e in self.cut}
         nx.draw_networkx_edge_labels(self.graph, pos, edge_labels=labels, font_color=CUT_EDGE_COLOR)
 
         # Draw the edges that are not in the cut
         nx.draw_networkx_edges(self.graph, pos, edgelist=leave, edge_color=NON_CUT_EDGE_COLOR)
-        labels = {e: '{}'.format(self.graph[e[0]][e[1]]['weight']) for e in leave}
+        labels = {e: f"{self.graph[e[0]][e[1]]['weight']:.2f}" for e in leave}
         nx.draw_networkx_edge_labels(self.graph, pos, edge_labels=labels, font_color=NON_CUT_EDGE_COLOR)
 
         # Show the relaxation optimum value and the cut capacity.
@@ -107,7 +108,8 @@ class MaxcutStanceClassifier(BaseStanceClassifier):
         if outpath is not None:
             pylab.savefig(outpath)
 
-        pylab.show()
+        if show:
+            pylab.show()
 
     def __get_supporters(self,  cut_nodes: Set[Any], op: Any):
         return cut_nodes if op in cut_nodes else self.graph.nodes - cut_nodes
