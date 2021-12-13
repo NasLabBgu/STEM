@@ -11,8 +11,8 @@ import pandas as pd
 
 from conversant.conversation import Conversation
 from conversant.interactions import InteractionsGraph
-from stance_classification.data.iac import FourForumInteractionsBuilder
-from stance_classification.data.iac.fourforum_conversation_parser import FourForumConversationParser
+from experiments.datahandlers.iac.fourforum_conversation_parser import FourForumConversationParser
+from experiments.datahandlers.iac.fourforum_interactions import FourForumInteractionsBuilder
 
 POSTS_FILENAME = "post.txt"
 NULL_VALUE = "\\N"

@@ -3,8 +3,7 @@ from typing import List, Iterable, Tuple, Any, Union
 
 from conversant.conversation import Conversation, ConversationNode
 from conversant.interactions import InteractionsParser, InteractionsGraph
-from conversant.interactions.aggregators import CountInteractionsAggregator
-from stance_classification.data.cmv_agreement_aggregator import NodesInteractionsAggregator
+from conversant.interactions.aggregators import CountInteractionsAggregator, NodesInteractionsAggregator
 
 QUOTE_NODE_FIELD = "quote_source_ids"
 

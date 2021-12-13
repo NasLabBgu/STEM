@@ -2,7 +2,7 @@ from typing import Union, Dict, List, Iterable, Any, Set
 
 from dataclasses import dataclass, field as dataclass_field
 
-from stance_classification.utils import find_user_mentions, strip_mention_prefix, find_quotes, strip_quote_symbols, \
+from stem.utils import find_user_mentions, strip_mention_prefix, find_quotes, strip_quote_symbols, \
     is_source_of_quote
 
 

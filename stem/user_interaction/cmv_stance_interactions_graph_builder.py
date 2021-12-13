@@ -3,7 +3,7 @@ from typing import Any, List, Iterable, Tuple
 from conversant.conversation import NodeData, Conversation
 from conversant.interactions import InteractionsParser, InteractionsGraph
 from conversant.interactions.aggregators import CountInteractionsAggregator
-from stance_classification.reddit_conversation_parser import CMVConversationReader
+from stem.reddit_conversation_parser import CMVConversationReader
 from stance_classification.user_interaction.cmv_interactions_utils import find_quote_author, check_delta_award, \
     find_award_recipient
 from stance_classification.utils import find_user_mentions, strip_mention_prefix, find_quotes

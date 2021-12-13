@@ -1,12 +1,11 @@
 from typing import Dict, Union, Callable, List, Any
 
 import pylab
-# from networkx.drawing.nx_agraph import graphviz_layout
-from networkx.drawing.nx_pydot import graphviz_layout
 
-from stance_classification.classifiers.maxcut import new_figure
-from stance_classification.graph_utils import get_op_connected_component
-from stance_classification.user_interaction.user_interaction_parser import UsersInteraction, cmv_interaction_weight, \
+
+from stem.classifiers.maxcut import new_figure
+# from stem.graph_utils import get_op_connected_component
+from stem.user_interaction.user_interaction_parser import UsersInteraction, cmv_interaction_weight, \
     filter_interactions
 
 import networkx as nx
@@ -18,8 +17,6 @@ DEFAULT_WEIGHT = 1.0
 OP_COLOR = 'green'
 NODES_COLOR = 'lightblue'
 
-
-def get_one(*args, **kwargs): return DEFAULT_WEIGHT
 
 
 def build_users_interaction_graph(users_interactions: Dict[str, Dict[str, UsersInteraction]],
@@ -55,18 +52,6 @@ def to_undirected_gaprh(graph: nx.DiGraph) -> nx.Graph:
         graph[i][j]['weight'] = original_edges_weights.get((i, j), 0) + original_edges_weights.get((j, i), 0)
 
     return graph
-
-
-def get_core_interactions(interactions_graph: Dict[str, Dict[str, UsersInteraction]], op: str, k_core: int = 1):
-    # TODO implement it more efficiently.
-    interactions = filter_interactions(interactions_graph, op) # TODO implement this process as part of an undirected graph
-    graph = build_users_interaction_graph(interactions, weight_func=cmv_interaction_weight)
-    undir_graph = to_undirected_gaprh(graph)
-    op_connected_nodes = get_op_connected_component(undir_graph, op)
-    # graph = graph.subgraph(op_connected_nodes)
-    undir_graph = undir_graph.subgraph(op_connected_nodes)
-    undir_graph = nx.k_core(undir_graph, k_core)
-    return undir_graph
 
 
 def draw_user_interactions_graph(graph: nx.Graph, op: str = None,
