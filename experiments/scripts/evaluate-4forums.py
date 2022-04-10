@@ -34,17 +34,18 @@ POSITIVE_STANCE_LABEL: int = 1
 NEGATIVE_STANCE_LABEL: int = 0
 
 
-MST_MODEL = "GREEDY"
+GREEDY_MODEL = "GREEDY"
 STEM_CORE_MODEL = "STEM-CORE"
-STEM_MODEL = "STEM-PROPAGATED"
+STEM_PRPG_MODEL = "STEM-PROPAGATED"
 MCSN_CORE_MODEL = "STEM+ZS+SN-CORE"
-MCSN_MODEL = "STEM+ZS+SN-PROPAGATED"
+MCSN_PRPG_MODEL = "STEM+ZS+SN-PROPAGATED"
+MCSN_MODEL_ALL = "STEM+ZS+SN-ALL"
 ZSSD_AVG = "ZS-AVG"
 ZSSD_MAX = "ZS-MAX"
 ZSSD_SUM = "ZS-SUM"
 
 
-MODELS = [MST_MODEL, STEM_CORE_MODEL, STEM_MODEL, MCSN_CORE_MODEL, MCSN_MODEL, ZSSD_AVG, ZSSD_MAX, ZSSD_SUM]
+MODELS = [GREEDY_MODEL, STEM_CORE_MODEL, STEM_PRPG_MODEL, MCSN_CORE_MODEL, MCSN_PRPG_MODEL, MCSN_MODEL_ALL, ZSSD_AVG, ZSSD_MAX, ZSSD_SUM]
 NEGATIVE_STANCE_NODE = "stance-N"
 POSITIVE_STANCE_NODE = "stance-P"
 STANCE_EDGE_WEIGHT = 0.5
@@ -298,7 +299,7 @@ class ExperimentResults(NamedTuple):
             f"total number of conversations with labeled authors (in the relevant topics): {self.on_topic_count.value - len(self.unlabeled_conversations)}")
         print(f"number of conversations in eval: {len(self.convs_by_id)}")
         all_authors_in_eval = set(
-            chain(*[predictions[MST_MODEL].keys() for cid, predictions in self.author_predictions.items()]))
+            chain(*[predictions[GREEDY_MODEL].keys() for cid, predictions in self.author_predictions.items()]))
         print(f"number of unique authors in eval: {len(all_authors_in_eval)}")
         all_authors_in_core_eval = set(
             chain(*[predictions.get(STEM_CORE_MODEL, {}).keys() for cid, predictions in self.author_predictions.items()]))
@@ -403,7 +404,7 @@ def process_stance(
         mst = get_greedy_results(interaction_graph, pivot)
         negative, positive = decide_stance_groups(conv, mst.get_supporters(), mst.get_complement())
         preds = get_author_preds(negative, positive)
-        results.author_predictions[conv.id] = {MST_MODEL: preds}
+        results.author_predictions[conv.id] = {GREEDY_MODEL: preds}
 
         # store zero-shot preds
         author_posts_preds = aggregate_authors_posts_preds(conv, zs_preds)
@@ -413,6 +414,17 @@ def process_stance(
 
         if naive_results:
             continue
+
+        stance_interactions_graph = connect_stance_nodes(interaction_graph, author_posts_preds, STANCE_EDGE_WEIGHT)
+        pbar.set_description(f"Conversation {conv.id}, participants: {conv.number_of_participants}")
+        maxcut_with_stance = get_maxcut_with_stance_results(stance_interactions_graph, conv.root.node_id, "weight")
+        results.maxcut_with_stance_results[conv.id] = maxcut_with_stance
+        # maxcut_with_stance.draw(outpath=f"graphs/{MCSN_MODEL_ALL}-{conv.id}.png")
+
+        negative, positive = decide_stance_groups_by_stance_nodes(maxcut_with_stance.get_supporters(),
+                                                                  maxcut_with_stance.get_complement())
+        preds = get_author_preds(positive, negative)
+        results.author_predictions[conv.id][MCSN_MODEL_ALL] = preds
 
         core_interactions = interaction_graph.get_core_interactions()
         results.core_graphs[conv.id] = core_interactions
@@ -436,19 +448,22 @@ def process_stance(
 
         # propagate results from core to full graph
         preds = extend_preds(interaction_graph.graph, pivot, preds)
-        results.author_predictions[conv.id][STEM_MODEL] = preds
+        results.author_predictions[conv.id][STEM_PRPG_MODEL] = preds
 
-        stance_interactions_graph = connect_stance_nodes(core_interactions, conv, zs_preds, STANCE_EDGE_WEIGHT)
+        stance_interactions_graph = connect_stance_nodes(core_interactions, author_posts_preds, STANCE_EDGE_WEIGHT)
         pbar.set_description(f"Conversation {conv.id}, participants: {conv.number_of_participants}")
         maxcut_with_stance = get_maxcut_with_stance_results(stance_interactions_graph, conv.root.node_id, "weight")
         results.maxcut_with_stance_results[conv.id] = maxcut_with_stance
-        maxcut_with_stance.draw(outpath=f"graphs/{conv.id}.png")
+        # maxcut_with_stance.draw(outpath=f"graphs/{MCSN_CORE_MODEL}-{conv.id}.png")
 
         negative, positive = decide_stance_groups_by_stance_nodes(maxcut_with_stance.get_supporters(),
                                                                   maxcut_with_stance.get_complement())
         preds = get_author_preds(positive, negative)
-        results.author_predictions[conv.id][MCSN_MODEL] = preds
+        results.author_predictions[conv.id][MCSN_CORE_MODEL] = preds
 
+        # propagate results from core to full graph
+        preds = extend_preds(stance_interactions_graph.graph, pivot, preds)
+        results.author_predictions[conv.id][MCSN_PRPG_MODEL] = preds
 
     results.total_time.end()
     return results
