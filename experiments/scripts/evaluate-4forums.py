@@ -30,12 +30,21 @@ FOURFORUMS_DIR = "fourforums"
 FOURFORUMS_AUTHOR_LABELS_FILENAME = "mturk_author_stance.txt"
 
 
-MST_MODEL = "MST"
-CORE_MODEL = "2-CORE"
-FULL_MODEL = "FULL"
-MCSN_MODEL = "MCSN-CORE"
+POSITIVE_STANCE_LABEL: int = 1
+NEGATIVE_STANCE_LABEL: int = 0
 
-MODELS = [MST_MODEL, CORE_MODEL, FULL_MODEL, MCSN_MODEL]
+
+MST_MODEL = "GREEDY"
+STEM_CORE_MODEL = "STEM-CORE"
+STEM_MODEL = "STEM-PROPAGATED"
+MCSN_CORE_MODEL = "STEM+ZS+SN-CORE"
+MCSN_MODEL = "STEM+ZS+SN-PROPAGATED"
+ZSSD_AVG = "ZS-AVG"
+ZSSD_MAX = "ZS-MAX"
+ZSSD_SUM = "ZS-SUM"
+
+
+MODELS = [MST_MODEL, STEM_CORE_MODEL, STEM_MODEL, MCSN_CORE_MODEL, MCSN_MODEL, ZSSD_AVG, ZSSD_MAX, ZSSD_SUM]
 NEGATIVE_STANCE_NODE = "stance-N"
 POSITIVE_STANCE_NODE = "stance-P"
 STANCE_EDGE_WEIGHT = 0.5
@@ -144,9 +153,9 @@ def extend_preds(graph: nx.Graph, seed_node: Any, core_authors_preds: Dict[Any, 
 def get_author_preds(positive_authors: Set[Any], negative_authors: Set[Any]) -> Dict[Any, int]:
     preds = {}
     for author in positive_authors:
-        preds[author] = 1
+        preds[author] = POSITIVE_STANCE_LABEL
     for author in negative_authors:
-        preds[author] = 0
+        preds[author] = NEGATIVE_STANCE_LABEL
 
     return preds
 
@@ -292,7 +301,7 @@ class ExperimentResults(NamedTuple):
             chain(*[predictions[MST_MODEL].keys() for cid, predictions in self.author_predictions.items()]))
         print(f"number of unique authors in eval: {len(all_authors_in_eval)}")
         all_authors_in_core_eval = set(
-            chain(*[predictions.get(CORE_MODEL, {}).keys() for cid, predictions in self.author_predictions.items()]))
+            chain(*[predictions.get(STEM_CORE_MODEL, {}).keys() for cid, predictions in self.author_predictions.items()]))
         print(f"number of unique authors in core: {len(all_authors_in_core_eval)}")
         print("=========")
         print(f"number of conversations with single author: {len(self.single_author_conv)}")
@@ -328,13 +337,31 @@ def softmax(values: Sequence[float]) -> np.ndarray:
     return values_exp / sum(values_exp)
 
 
-def connect_stance_nodes(interactions: InteractionsGraph, conv: Conversation, zs_labels: Dict[Any, np.ndarray], weight: float = 1.0) -> nx.Graph:
+def aggregate_authors_posts_preds(conv: Conversation, zs_labels: Dict[Any, np.ndarray]) -> Dict[Any, np.ndarray]:
     authors_agg_preds = {}
     for _, node in conv.iter_conversation():
         normalized_pred = softmax(zs_labels.get(node.node_id, EMPTY_ZS_PREDS))
         authors_agg_preds.setdefault(node.author, []).append(normalized_pred)
 
-    authors_avg_preds = {author: np.average(np.vstack(preds), axis=0) for author, preds in authors_agg_preds.items()}
+    # convert list of arrays to matrix, and return
+    return {author: np.vstack(preds) for author, preds in authors_agg_preds.items()}
+
+
+def author_preds_from_zs_labels(author_posts_preds: Dict[Any, np.ndarray], strategy: str = "avg") -> Dict[Any, int]:
+    agg_func: Callable[[np.ndarray], np.ndarray]
+    if strategy == "avg":
+        agg_func = partial(np.average, axis=0)
+    elif strategy == "sum":
+        agg_func = partial(np.sum, axis=0)
+    elif strategy == "max":
+        agg_func = partial(np.max, axis=0)
+
+    authors_preds = {author: np.argmax(agg_func(preds)[:2]) for author, preds in author_posts_preds.items()}
+    return authors_preds
+
+
+def connect_stance_nodes(interactions: InteractionsGraph, authors_agg_preds: Dict[Any, np.ndarray], weight: float = 1.0) -> nx.Graph:
+    authors_avg_preds = {author: np.average(preds, axis=0) for author, preds in authors_agg_preds.items()}
 
     weighted_edges = [(i.user1, i.user2, {"weight": i.data[i.WEIGHT_FIELD]}) for i in interactions.interactions]
     pos_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": -weight * preds[1]}) for author, preds in authors_avg_preds.items()]
@@ -378,6 +405,12 @@ def process_stance(
         preds = get_author_preds(negative, positive)
         results.author_predictions[conv.id] = {MST_MODEL: preds}
 
+        # store zero-shot preds
+        author_posts_preds = aggregate_authors_posts_preds(conv, zs_preds)
+        for (model, strategy) in [(ZSSD_SUM, "sum"), (ZSSD_MAX, "max"), (ZSSD_AVG, "avg")]:
+            author_preds = author_preds_from_zs_labels(author_posts_preds)
+            results.author_predictions[conv.id][model] = author_preds
+
         if naive_results:
             continue
 
@@ -399,11 +432,11 @@ def process_stance(
 
         negative, positive = decide_stance_groups(conv, maxcut.get_supporters(), maxcut.get_complement())
         preds = get_author_preds(positive, negative)
-        results.author_predictions[conv.id][CORE_MODEL] = preds
+        results.author_predictions[conv.id][STEM_CORE_MODEL] = preds
 
         # propagate results from core to full graph
         preds = extend_preds(interaction_graph.graph, pivot, preds)
-        results.author_predictions[conv.id][FULL_MODEL] = preds
+        results.author_predictions[conv.id][STEM_MODEL] = preds
 
         stance_interactions_graph = connect_stance_nodes(core_interactions, conv, zs_preds, STANCE_EDGE_WEIGHT)
         pbar.set_description(f"Conversation {conv.id}, participants: {conv.number_of_participants}")
@@ -525,6 +558,8 @@ if __name__ == "__main__":
     process_parser = subparsers.add_parser("process", parents=[parent_parser])
     process_parser.add_argument("path", type=str,
                                 help="Path to the IAC directory containing all dataset as downloaded and extracted")
+    process_parser.add_argument("--naive", const=True, action="store_const", default=False,
+                                help="Apply only greedy and zero-shot approaches. SDP-based models won't be processed.")
 
     eval_parser = subparsers.add_parser("eval", parents=[parent_parser])
 
@@ -537,7 +572,7 @@ if __name__ == "__main__":
         convs = load_conversations_from_dataframe(args.path)
         convs = list(filter(is_relevant_conversation, convs))
         decide_stance_groups = partial(decide_stance_groups_by_zs, zs_labels=zero_shot_labels, strategy="average")
-        results = process_stance(convs, decide_stance_groups, zero_shot_probs)
+        results = process_stance(convs, decide_stance_groups, zero_shot_probs, naive_results=args.naive)
         results.show()
 
         print("convert results to detailed_df")
