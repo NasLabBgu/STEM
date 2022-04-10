@@ -34,6 +34,9 @@ POSITIVE_STANCE_LABEL: int = 1
 NEGATIVE_STANCE_LABEL: int = 0
 
 
+POSITIVE_PRED_INDEX: int = 1
+NEGATIVE_PRED_INDEX: int = 0
+
 GREEDY_MODEL = "GREEDY"
 STEM_CORE_MODEL = "STEM-CORE"
 STEM_PRPG_MODEL = "STEM-PROPAGATED"
@@ -365,13 +368,13 @@ def connect_stance_nodes(interactions: InteractionsGraph, authors_agg_preds: Dic
     authors_avg_preds = {author: np.average(preds, axis=0) for author, preds in authors_agg_preds.items()}
 
     weighted_edges = [(i.user1, i.user2, {"weight": i.data[i.WEIGHT_FIELD]}) for i in interactions.interactions]
-    pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": weight * preds[1]}) for author, preds in authors_avg_preds.items()]
-    neg_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": weight * preds[0]}) for author, preds in authors_avg_preds.items()]
+    pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": weight * preds[POSITIVE_PRED_INDEX]})for author, preds in authors_avg_preds.items()]
+    neg_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": weight * preds[NEGATIVE_PRED_INDEX]}) for author, preds in authors_avg_preds.items()]
 
-    # total_stance_edges_weight = 2. * len(authors_agg_preds)
-    # constraint_edge = [(POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE, {"weight": weight * total_stance_edges_weight})]
-    # return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges + constraint_edge)
-    return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges)
+    total_stance_edges_weight = 2. * len(authors_agg_preds)
+    constraint_edge = [(POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE, {"weight": weight * total_stance_edges_weight})]
+    return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges + constraint_edge)
+    # return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges)
 
 
 def process_stance(
