@@ -365,8 +365,8 @@ def connect_stance_nodes(interactions: InteractionsGraph, authors_agg_preds: Dic
     authors_avg_preds = {author: np.average(preds, axis=0) for author, preds in authors_agg_preds.items()}
 
     weighted_edges = [(i.user1, i.user2, {"weight": i.data[i.WEIGHT_FIELD]}) for i in interactions.interactions]
-    pos_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": -weight * preds[1]}) for author, preds in authors_avg_preds.items()]
-    neg_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": -weight * preds[0]}) for author, preds in authors_avg_preds.items()]
+    pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": weight * preds[1]}) for author, preds in authors_avg_preds.items()]
+    neg_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": weight * preds[0]}) for author, preds in authors_avg_preds.items()]
 
     # total_stance_edges_weight = 2. * len(authors_agg_preds)
     # constraint_edge = [(POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE, {"weight": weight * total_stance_edges_weight})]
@@ -462,7 +462,7 @@ def process_stance(
         results.author_predictions[conv.id][MCSN_CORE_MODEL] = preds
 
         # propagate results from core to full graph
-        preds = extend_preds(stance_interactions_graph.graph, pivot, preds)
+        preds = extend_preds(stance_interactions_graph, pivot, preds)
         results.author_predictions[conv.id][MCSN_PRPG_MODEL] = preds
 
     results.total_time.end()
