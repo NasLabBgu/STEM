@@ -1,6 +1,7 @@
 import os
+import traceback
 from operator import itemgetter
-from typing import Dict, Tuple, Sequence, Any, List, Set, Union
+from typing import Dict, Tuple, Sequence, Any, List, Set, Union, Collection, Optional
 
 import picos
 
@@ -31,7 +32,18 @@ def output_vertex_embedding(graph: nx.Graph, embeddings: cvx_matrix):
     embeddings_df.to_csv(outpath, index=False)
 
 
-def solve_sdp(G: nx.Graph, weight: str = "weight"):
+def get_nodes_indices(g: nx.Graph, nodes: Collection[Any]) -> List[Optional[int]]:
+    query_nodes_index_mapping = {n: i for i, n in enumerate(nodes)}
+    result_indices: List[Optional[int]] = [None for _ in range(len(nodes))]
+    for i, n in enumerate(g.nodes()):
+        result_index = query_nodes_index_mapping.get(n)
+        if result_index is not None:
+            result_indices[result_index] = i
+
+    return result_indices
+
+
+def solve_sdp(G: nx.Graph, weight: str = "weight", positive_node: int = -1, negative_node: int = -1):
     """
     solve the sdp problem with object of max-cut and G as an input.
     :param G: undirected graph
@@ -42,7 +54,7 @@ def solve_sdp(G: nx.Graph, weight: str = "weight"):
     maxcut = picos.Problem()
 
     # Add the symmetric matrix variable.
-    X = maxcut.add_variable('X', (num_nodes, num_nodes), 'symmetric')
+    X: SymmetricVariable = maxcut.add_variable('X', (num_nodes, num_nodes), 'symmetric')
 
     # Retrieve the Laplacian of the graph.
     LL = 1 / 4. * nx.laplacian_matrix(G, weight=weight).todense()
@@ -51,24 +63,41 @@ def solve_sdp(G: nx.Graph, weight: str = "weight"):
     # Constrain X to have ones on the diagonal.
     maxcut.add_constraint(picos.diag_vect(X) == 1)
 
-    # Constrain X to be positive semidefinite.
+    # Constrain the positive and negative node to be antipodal to each other.
+    if (positive_node is not None) and (negative_node is not None):
+        min_index, max_index = sorted([positive_node, negative_node])
+        maxcut.add_constraint(X[max_index, min_index] <= -0.99)
+        maxcut.add_constraint(X[min_index, max_index] <= -0.99)
+
+    # Constrain X to be positive semi-definite.
     maxcut.add_constraint(X >> 0)
 
     # Set the objective.
     maxcut.set_objective('max', L | X)
 
     # Solve the problem.
-    maxcut.solve(verbose=0, solver='cvxopt')
+    try:
+        maxcut.solve(verbose=0, solver='cvxopt')
+        # maxcut.solve(verbose=0, solver='mosek')
+    except ArithmeticError:
+        print(traceback.format_exc())
+    except Exception as e:
+        print(traceback.format_exc())
 
     return G, X, L, num_nodes, maxcut
 
 
-def find_relaxation(G: nx.Graph, X: SymmetricVariable, L: AffineExpression, num_nodes: int, maxcut: Problem) -> Tuple[float, set, Dict[Any, np.ndarray]]:
+def find_relaxation(G: nx.Graph,X: SymmetricVariable, L: AffineExpression,num_nodes: int, maxcut: Problem,
+                    positive_index: Optional[int] = None, negative_index: Optional[int] = None
+                    ) -> Tuple[float, set, Dict[Any, np.ndarray]]:
     """
+    :param G: graph to partition
     :param X: Positive Semidefinite matrix
     :param L:  Laplacian matix of the graph
     :param num_nodes:
     :param maxcut:
+    :param positive_index:
+    :param negative_index:
     :return:
     """
     ### Perform the random relaxation
@@ -77,25 +106,39 @@ def find_relaxation(G: nx.Graph, X: SymmetricVariable, L: AffineExpression, num_
 
     # Perform a Cholesky factorization (in the lower triangular part of the matrix)
     V = X.value
-    cvxopt.lapack.potrf(V)
-    # set the resulting matrix into a lower triangular matrix
-    for i in range(num_nodes):
-        for j in range(i + 1, num_nodes):
-            V[i, j] = 0
+    eigenvalues = np.linalg.eigvalsh(V)
+    min_eigenval = min(eigenvalues)
+    if np.sign(min_eigenval) == -1:
+        V += (abs(min_eigenval) + 1e-4) * np.identity(V.size[0])
+
+    V = cvx_matrix(np.linalg.cholesky(V))
+
+    # cvxopt.lapack.potrf(V)
+    ## set the resulting matrix into a lower triangular matrix
+    # for i in range(num_nodes):
+    #     for j in range(i + 1, num_nodes):
+    #         V[i, j] = 0
 
     # output_vertex_embedding(G, V)
+
+    def verify_opposite_stances(partition: cvx_matrix, positive_index: Optional[int], negative_index: Optional[int]):
+        if positive_index and negative_index:
+            return partition[positive_index] * partition[negative_index] == -1
+
+        return True
 
     # Do up to 100 projections. Stop if we are within a factor 0.878 of the SDP
     # optimal value.
     count = 0
     obj_sdp = maxcut.obj_value()
     obj = 0
+    lower_bound = 0.878 * obj_sdp
     x_cut: cvx.matrix = None
-    while (count < 100 or obj < 0.878 * obj_sdp):
+    while (count < 100) or (obj < lower_bound):
         r = cvx.normal(num_nodes, 1)
         x = cvx.matrix(np.sign(V * r))
         o = (x.T * L * x).value
-        if o > obj:
+        if o > obj and verify_opposite_stances(x, positive_index, negative_index):
             x_cut = x
             obj = o
         count += 1
@@ -108,7 +151,9 @@ def find_relaxation(G: nx.Graph, X: SymmetricVariable, L: AffineExpression, num_
     return maxcut.obj_value(), cut_nodes, embeddings
 
 
-def max_cut(G: nx.Graph, weight: str = "weight") -> Tuple[float, set, Union[None, Dict[Any, np.ndarray]]]:
+def max_cut(G: nx.Graph, weight: str = "weight",
+            positive_node: Any = None, negative_node: Any = None
+            ) -> Tuple[float, set, Union[None, Dict[Any, np.ndarray]]]:
     """
     :param G: an undirected graph
     :param weights:
@@ -121,9 +166,11 @@ def max_cut(G: nx.Graph, weight: str = "weight") -> Tuple[float, set, Union[None
     if sum_edges_weight == 0:
         return get_empty_result()
 
-    G, X, L, num_nodes, maxcut = solve_sdp(G, weight)
-    relxation_value, cut_nodes, embeddings = find_relaxation(G, X, L, num_nodes, maxcut)
-    return relxation_value, cut_nodes, embeddings
+
+    positive_index, negative_index = get_nodes_indices(G, [positive_node, negative_node])
+    G, X, L, num_nodes, maxcut = solve_sdp(G, weight, positive_index, negative_index)
+    relaxation_value, cut_nodes, embeddings = find_relaxation(G, X, L, num_nodes, maxcut, positive_index, negative_index)
+    return relaxation_value, cut_nodes, embeddings
 
 
 def get_empty_result() -> Tuple[float, Set[Any], None]:

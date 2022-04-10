@@ -1,30 +1,37 @@
 from functools import partial
-from typing import Set, Tuple, Callable, Any, Dict, Sequence
+from typing import Set, Tuple, Callable, Any, Dict, Sequence, Optional
 
 import pylab
 import numpy as np
 from networkx.algorithms import bipartite
 
-from stance_classification.draw_utils import OP_COLOR, SUPPORT_COLOR, new_figure, OPPOSE_COLOR, CUT_EDGE_COLOR, \
+from stem.draw_utils import OP_COLOR, SUPPORT_COLOR, new_figure, OPPOSE_COLOR, CUT_EDGE_COLOR, \
     NON_CUT_EDGE_COLOR, NODE_LABEL_COLOR, TRUE_SUPPORT_COLOR, UNKNOWN_GT_LABEL, TRUE_OPPOSE_COLOR
-from stance_classification.classifiers.base_stance_classifier import BaseStanceClassifier
+from classifiers.base_stance_classifier import BaseStanceClassifier
 import networkx as nx
 
-from stance_classification.classifiers.maxcut import max_cut
-from stance_classification.classifiers.stance_classification_utils import get_cut_from_nodelist
+from classifiers.maxcut import max_cut
+from classifiers.stance_classification_utils import get_cut_from_nodelist
 
 from picos import SymmetricVariable
 
 
 class MaxcutStanceClassifier(BaseStanceClassifier):
 
-    def __init__(self, weight_field: str = "weight"):
+    def __init__(self, weight_field: str = "weight", stance_nodes: Optional[Tuple[Any, Any]] = None):
+        """
+        weight_field: (str) the name of the field storing the weight of an edge in the graph to classify
+        stance_nodes: (optional) a tuple of 2 nodes, the positive stance node followed by the negative stance node.
+            If not `None` add constraints to the max-cut problem. default to None
+        """
         self.initialized = False
         self.__weight_field = weight_field
 
         # input
         self.graph: nx.Graph = None
         self.op: str = None
+
+        self.__stance_nodes = stance_nodes if stance_nodes is not None else (None, None)
 
         # result
         self.cut_value: float = -1
@@ -39,7 +46,9 @@ class MaxcutStanceClassifier(BaseStanceClassifier):
         self.initialized = True
 
     def classify_stance(self):
-        cut_value, cut_nodes, embeddings = max_cut(self.graph, weight=self.__weight_field)
+        positive_node, negative_node = self.__stance_nodes
+        cut_value, cut_nodes, embeddings = max_cut(self.graph, weight=self.__weight_field,
+                                                   positive_node=positive_node, negative_node=negative_node)
         self.cut_value = cut_value
         self.supporters = self.__get_supporters(cut_nodes, self.op)
         self.complement = self.graph.nodes - self.supporters
@@ -83,7 +92,10 @@ class MaxcutStanceClassifier(BaseStanceClassifier):
         if layout_func is None:
             layout_func = partial(nx.spring_layout, seed=1919)
 
-        pos = layout_func(self.graph)
+        for (_, _, data) in self.graph.edges(data=True):
+            data["inverse_weight"] = 1. / data["weight"]
+
+        pos = layout_func(self.graph, weight="inverse_weight")
         nodes = nx.draw_networkx_nodes(self.graph, pos, node_color=node_colors)
         nodes.set_edgecolor(gt_colors)
         nodes.set_linewidth([v *2 for v in nodes.get_linewidth()])

@@ -33,11 +33,11 @@ FOURFORUMS_AUTHOR_LABELS_FILENAME = "mturk_author_stance.txt"
 MST_MODEL = "MST"
 CORE_MODEL = "2-CORE"
 FULL_MODEL = "FULL"
-MCSN_MODEL = "MCSN"
+MCSN_MODEL = "MCSN-CORE"
 
 MODELS = [MST_MODEL, CORE_MODEL, FULL_MODEL, MCSN_MODEL]
-NEGATIVE_STANCE_NODE = "stance-0"
-POSITIVE_STANCE_NODE = "stance-1"
+NEGATIVE_STANCE_NODE = "stance-N"
+POSITIVE_STANCE_NODE = "stance-P"
 STANCE_EDGE_WEIGHT = 0.5
 
 # type aliases
@@ -62,7 +62,7 @@ EMPTY_ZS_PREDS = empty_zs_preds()
 
 
 def load_conversations_from_dataframe(path: str) -> Iterable[Conversation]:
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, low_memory=False)
     parser = DataFrameConversationReader(fields_mapping, conversation_id_column="conversation_id")
     groups = df.groupby("conversation_id")
     for cid, raw_conversation in tqdm(groups, total=groups.ngroups):
@@ -83,10 +83,14 @@ def get_author_labels(conv: Conversation) -> Dict[Any, int]:
     labels = {}
     for depth, node in conv.iter_conversation():
         label = node.data["author_label"]
+        if isinstance(label, str):
+            print(node)
         if label >= 0:
             labels[node.author] = label
 
     return labels
+
+#4forums_10847_5
 
 
 def get_posts_labels(conv: Conversation) -> Dict[Any, int]:
@@ -155,7 +159,7 @@ def get_maxcut_results(graph: InteractionsGraph, op: Any) -> MaxcutStanceClassif
 
 
 def get_maxcut_with_stance_results(graph: nx.Graph, op: Any, weight_field: str = "weight") -> MaxcutStanceClassifier:
-    maxcut = MaxcutStanceClassifier(weight_field=weight_field)
+    maxcut = MaxcutStanceClassifier(weight_field=weight_field, stance_nodes=(POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE))
     maxcut.set_input(graph, op)
     maxcut.classify_stance()
     return maxcut
@@ -330,16 +334,16 @@ def connect_stance_nodes(interactions: InteractionsGraph, conv: Conversation, zs
         normalized_pred = softmax(zs_labels.get(node.node_id, EMPTY_ZS_PREDS))
         authors_agg_preds.setdefault(node.author, []).append(normalized_pred)
 
-    #
-    authors_avg_preds = {author: np.average(preds) for author, preds in authors_agg_preds.items()}
+    authors_avg_preds = {author: np.average(np.vstack(preds), axis=0) for author, preds in authors_agg_preds.items()}
 
     weighted_edges = [(i.user1, i.user2, {"weight": i.data[i.WEIGHT_FIELD]}) for i in interactions.interactions]
-    pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": weight * preds[1]}) for author, preds in authors_avg_preds.items()]
-    neg_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": weight * preds[0]}) for author, preds in authors_avg_preds.items()]
+    pos_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": -weight * preds[1]}) for author, preds in authors_avg_preds.items()]
+    neg_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": -weight * preds[0]}) for author, preds in authors_avg_preds.items()]
 
-    total_stance_edges_weight = np.sum(sum(authors_agg_preds.values()))
-    constraint_edge = [(POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE, {"weight": weight * total_stance_edges_weight})]
-    return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges + constraint_edge)
+    # total_stance_edges_weight = 2. * len(authors_agg_preds)
+    # constraint_edge = [(POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE, {"weight": weight * total_stance_edges_weight})]
+    # return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges + constraint_edge)
+    return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges)
 
 
 def process_stance(
@@ -352,7 +356,8 @@ def process_stance(
     results = ExperimentResults()
     print("Start processing authors stance")
     results.total_time.start()
-    for i, conv in enumerate(tqdm(conversations)):
+    first = True
+    for i, conv in enumerate(pbar := tqdm(conversations)):
         results.total_count.increment()
 
         if conv.number_of_participants <= 1:
@@ -375,15 +380,6 @@ def process_stance(
 
         if naive_results:
             continue
-
-        stance_interactions_graph = connect_stance_nodes(interaction_graph, conv, zs_preds, STANCE_EDGE_WEIGHT)
-        maxcut_with_stance = get_maxcut_with_stance_results(stance_interactions_graph, conv.root.node_id, "weight")
-        maxcut_with_stance.draw(outpath=f"graphs/{conv.id}.png")
-        results.maxcut_with_stance_results[conv.id] = maxcut_with_stance
-        negative, positive = decide_stance_groups_by_stance_nodes(maxcut_with_stance.get_supporters(),
-                                                                  maxcut_with_stance.get_complement())
-        preds = get_author_preds(positive, negative)
-        results.author_predictions[conv.id][MCSN_MODEL] = preds
 
         core_interactions = interaction_graph.get_core_interactions()
         results.core_graphs[conv.id] = core_interactions
@@ -409,13 +405,17 @@ def process_stance(
         preds = extend_preds(interaction_graph.graph, pivot, preds)
         results.author_predictions[conv.id][FULL_MODEL] = preds
 
-        stance_interactions_graph = connect_stance_nodes(interaction_graph, conv, zs_preds, STANCE_EDGE_WEIGHT)
+        stance_interactions_graph = connect_stance_nodes(core_interactions, conv, zs_preds, STANCE_EDGE_WEIGHT)
+        pbar.set_description(f"Conversation {conv.id}, participants: {conv.number_of_participants}")
         maxcut_with_stance = get_maxcut_with_stance_results(stance_interactions_graph, conv.root.node_id, "weight")
         results.maxcut_with_stance_results[conv.id] = maxcut_with_stance
+        maxcut_with_stance.draw(outpath=f"graphs/{conv.id}.png")
 
-        negative, positive = decide_stance_groups_by_stance_nodes(maxcut_with_stance.get_supporters(), maxcut_with_stance.get_complement())
+        negative, positive = decide_stance_groups_by_stance_nodes(maxcut_with_stance.get_supporters(),
+                                                                  maxcut_with_stance.get_complement())
         preds = get_author_preds(positive, negative)
         results.author_predictions[conv.id][MCSN_MODEL] = preds
+
 
     results.total_time.end()
     return results
@@ -508,7 +508,7 @@ def eval_results_per_topic(conv_eval_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame.from_records(records)
 
 
-def is_relevant_conv(conv: Conversation) -> bool:
+def is_relevant_conversation(conv: Conversation) -> bool:
     return bool(get_author_labels(conv))
 
 
@@ -535,7 +535,7 @@ if __name__ == "__main__":
         zero_shot_labels = get_zs_post_labels("../data/fourforums/4forums-raw-preds.compact.csv", probs=False)
         print("loading conversations")
         convs = load_conversations_from_dataframe(args.path)
-        convs = list(filter(is_relevant_conv, convs))
+        convs = list(filter(is_relevant_conversation, convs))
         decide_stance_groups = partial(decide_stance_groups_by_zs, zs_labels=zero_shot_labels, strategy="average")
         results = process_stance(convs, decide_stance_groups, zero_shot_probs)
         results.show()

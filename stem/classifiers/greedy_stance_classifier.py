@@ -4,11 +4,11 @@ from typing import Set, Tuple, Callable
 import pylab
 from networkx.algorithms import bipartite
 
-from stance_classification.draw_utils import OP_COLOR, SUPPORT_COLOR, new_figure, OPPOSE_COLOR
-from stance_classification.classifiers.base_stance_classifier import BaseStanceClassifier
+from stem.draw_utils import OP_COLOR, SUPPORT_COLOR, new_figure, OPPOSE_COLOR
+from classifiers.base_stance_classifier import BaseStanceClassifier
 import networkx as nx
 
-from stance_classification.classifiers.stance_classification_utils import get_cut_from_nodelist
+from classifiers.stance_classification_utils import get_cut_from_nodelist
 
 
 class MSTStanceClassifier(BaseStanceClassifier):

@@ -4,9 +4,9 @@ from random import Random
 import networkx as nx
 import pylab
 
-from stance_classification.draw_utils import new_figure, SUPPORT_COLOR, OPPOSE_COLOR, OP_COLOR
-from stance_classification.classifiers.base_stance_classifier import BaseStanceClassifier
-from stance_classification.classifiers.stance_classification_utils import get_cut_from_nodelist
+from classifiers import BaseStanceClassifier
+from classifiers.stance_classification_utils import get_cut_from_nodelist
+from draw_utils import new_figure, OP_COLOR, SUPPORT_COLOR, OPPOSE_COLOR
 
 DEFAULT_RANDOM_SEED = 1919
 
