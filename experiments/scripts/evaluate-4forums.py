@@ -43,15 +43,16 @@ STEM_PRPG_MODEL = "STEM-PROPAGATED"
 MCSN_CORE_MODEL = "STEM+ZS+SN-CORE"
 MCSN_PRPG_MODEL = "STEM+ZS+SN-PROPAGATED"
 MCSN_MODEL_ALL = "STEM+ZS+SN-ALL"
+STEM_PRPG_ZSSD = 'STEM+ZSSD'
 ZSSD_AVG = "ZS-AVG"
 ZSSD_MAX = "ZS-MAX"
 ZSSD_SUM = "ZS-SUM"
 
 
-MODELS = [GREEDY_MODEL, STEM_CORE_MODEL, STEM_PRPG_MODEL, MCSN_CORE_MODEL, MCSN_PRPG_MODEL, MCSN_MODEL_ALL, ZSSD_AVG, ZSSD_MAX, ZSSD_SUM]
+MODELS = [GREEDY_MODEL, STEM_CORE_MODEL, STEM_PRPG_MODEL, STEM_PRPG_ZSSD, MCSN_CORE_MODEL, MCSN_PRPG_MODEL, MCSN_MODEL_ALL, ZSSD_AVG, ZSSD_MAX, ZSSD_SUM]
 NEGATIVE_STANCE_NODE = "stance-N"
 POSITIVE_STANCE_NODE = "stance-P"
-STANCE_EDGE_WEIGHT = 0.5
+STANCE_EDGE_WEIGHT = 0.1
 
 # type aliases
 
@@ -368,13 +369,26 @@ def connect_stance_nodes(interactions: InteractionsGraph, authors_agg_preds: Dic
     authors_avg_preds = {author: np.average(preds, axis=0) for author, preds in authors_agg_preds.items()}
 
     weighted_edges = [(i.user1, i.user2, {"weight": i.data[i.WEIGHT_FIELD]}) for i in interactions.interactions]
-    pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": weight * preds[POSITIVE_PRED_INDEX]})for author, preds in authors_avg_preds.items()]
-    neg_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": weight * preds[NEGATIVE_PRED_INDEX]}) for author, preds in authors_avg_preds.items()]
 
-    total_stance_edges_weight = 2. * len(authors_agg_preds)
-    constraint_edge = [(POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE, {"weight": weight * total_stance_edges_weight})]
-    return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges + constraint_edge)
+    stance_edges = []
+    for author, preds in authors_avg_preds.items():
+        stance_value = preds[POSITIVE_PRED_INDEX] - preds[NEGATIVE_PRED_INDEX]
+        if stance_value == 0:
+            continue
+
+        stance_node = POSITIVE_STANCE_NODE if stance_value < 0 else NEGATIVE_STANCE_NODE
+        stance_edge = (author, stance_node, {"weight": weight * abs(stance_value)})
+        stance_edges.append(stance_edge)
+
+    # pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": weight * preds[POSITIVE_PRED_INDEX]}) for author, preds in authors_avg_preds.items()]
+    # neg_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": weight * preds[NEGATIVE_PRED_INDEX]}) for author, preds in authors_avg_preds.items()]
+
+    # total_stance_edges_weight = 2. * len(authors_agg_preds)
+    # constraint_edge = [(POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE, {"weight": weight * total_stance_edges_weight})]
+
+    # return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges + constraint_edge)
     # return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges)
+    return nx.from_edgelist(weighted_edges + stance_edges)
 
 
 def process_stance(
