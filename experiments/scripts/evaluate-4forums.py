@@ -370,29 +370,17 @@ def aggregate_author_stance_preds(preds: np.ndarray) -> Dict[int, float]:
     max_pred_indices = np.argmax(preds, axis=1)
     max_pred_values = np.max(preds, axis=1)
     max_index_value_pairs = zip(max_pred_indices, max_pred_values)
+    max_index_value_pairs = filter(lambda p: p[1] > 0.7, max_index_value_pairs)
     grouped_pairs_by_index = groupby(max_index_value_pairs, key=itemgetter(0))
     return {max_index: sum(map(itemgetter(1), pairs)) for max_index, pairs in grouped_pairs_by_index}
 
 
 def connect_stance_nodes(interactions: InteractionsGraph, authors_agg_preds: Dict[Any, np.ndarray], weight: float = 1.0) -> nx.Graph:
-    authors_avg_preds = {author: Counter(np.argmax(preds, axis=1)) for author, preds in authors_agg_preds.items()}
-
     weighted_edges = [(i.user1, i.user2, {"weight": i.data[i.WEIGHT_FIELD]}) for i in interactions.interactions]
 
-    # stance_edges = []
-    # for author, preds in authors_avg_preds.items():
-    #     stance_value = preds[POSITIVE_PRED_INDEX] - preds[NEGATIVE_PRED_INDEX]
-    #     if stance_value == 0:
-    #         continue
-    #
-    #     stance_node = POSITIVE_STANCE_NODE if stance_value < 0 else NEGATIVE_STANCE_NODE
-    #     stance_edge = (author, stance_node, {"weight": weight * abs(stance_value)})
-    #     stance_edges.append(stance_edge)
-
-    # constraint_edge = (POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE, {"weight": 0.001})
-
-    pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": weight * preds[POSITIVE_PRED_INDEX]}) for author, preds in authors_avg_preds.items()]
-    neg_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": weight * preds[NEGATIVE_PRED_INDEX]}) for author, preds in authors_avg_preds.items()]
+    authors_avg_preds = {author: aggregate_author_stance_preds(preds) for author, preds in authors_agg_preds.items()}
+    pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": weight * preds.get(POSITIVE_PRED_INDEX, 0.0)})for author, preds in authors_avg_preds.items()]
+    neg_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": weight * preds.get(NEGATIVE_PRED_INDEX, 0.0)}) for author, preds in authors_avg_preds.items()]
 
     total_stance_edges_weight = 2. * len(authors_agg_preds)
     constraint_edge = (POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE, {"weight": weight * total_stance_edges_weight})
