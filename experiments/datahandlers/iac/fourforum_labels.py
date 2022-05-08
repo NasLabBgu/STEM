@@ -33,22 +33,22 @@ class AuthorLabel(NamedTuple):
         )
 
 
-def resolve_author_label(annotation: AuthorAnnotations) -> AuthorLabel:
+def resolve_author_label(annotation: AuthorAnnotations, one_side_min_votes: int = 2, min_votes_ratio: float = 2.0) -> AuthorLabel:
 
     stance1, stance2 = annotation.topic_stance_id_1, annotation.topic_stance_id_2
     votes1, votes2 = annotation.votes_1, annotation.votes_2
 
     # multiple votes only for stance label 1
-    if (votes1 >= 3) and (votes2 == 0):
+    if (votes1 >= one_side_min_votes) and (votes2 == 0):
         return AuthorLabel.from_annotation(annotation, stance1)
     # multiple votes only for stance label 2
-    if (votes1 == 0) and (votes2 >= 3):
+    if (votes1 == 0) and (votes2 >= one_side_min_votes):
         return AuthorLabel.from_annotation(annotation, stance2)
     # both stance labels got votes, significant difference should be between them
     if (votes1 != 0) and (votes2 != 0):
         max_votes = max(votes1, votes2)
         min_votes = votes1 if max_votes is votes2 else votes2
-        if max_votes / min_votes > 2:
+        if max_votes / min_votes > min_votes_ratio:
             stance = stance1 if max_votes is votes1 else stance2
             return AuthorLabel.from_annotation(annotation, stance)
 

@@ -2,12 +2,13 @@ import time
 from collections import Counter
 from functools import partial
 
-from typing import List, Dict, Iterable, Any, Tuple, Sequence, Set, NamedTuple, Union, Callable
+from typing import List, Dict, Iterable, Any, Tuple, Sequence, Set, NamedTuple, Union, Callable, Optional
 
 import os
 import argparse
 from itertools import groupby, starmap, chain, islice
 from operator import itemgetter
+import heapq
 
 import numpy as np
 import pandas as pd
@@ -53,7 +54,7 @@ ZSSD_SUM = "ZS-SUM"
 MODELS = [GREEDY_MODEL, STEM_CORE_MODEL, STEM_PRPG_MODEL, STEM_PRPG_ZSSD, MCSN_CORE_MODEL, MCSN_PRPG_MODEL, MCSN_MODEL_ALL, ZSSD_AVG, ZSSD_MAX, ZSSD_SUM]
 NEGATIVE_STANCE_NODE = "stance-N"
 POSITIVE_STANCE_NODE = "stance-P"
-STANCE_EDGE_WEIGHT = 0.1
+STANCE_EDGE_WEIGHT = 1.0
 
 # type aliases
 
@@ -295,6 +296,8 @@ class ExperimentResults(NamedTuple):
     op_not_in_core: List[int] = []
     large_graphs: List[int] = []
     single_author_conv: List[int] = []
+    confident_convs: Set[Any] = set()
+    confident_core_convs: Set[Any] = set()
 
     def show(self):
         print(f"total time took: {self.total_time.duration()}")
@@ -366,20 +369,28 @@ def author_preds_from_zs_labels(author_posts_preds: Dict[Any, np.ndarray], strat
     return authors_preds
 
 
+def sum_top_k(values: Iterable[float], k) -> float:
+    return sum(heapq.nlargest(k, values))
+
+
 def aggregate_author_stance_preds(preds: np.ndarray) -> Dict[int, float]:
+    """
+    describe what's going on
+    """
     max_pred_indices = np.argmax(preds, axis=1)
     max_pred_values = np.max(preds, axis=1)
     max_index_value_pairs = zip(max_pred_indices, max_pred_values)
     max_index_value_pairs = filter(lambda p: p[1] > 0.7, max_index_value_pairs)
     grouped_pairs_by_index = groupby(max_index_value_pairs, key=itemgetter(0))
-    return {max_index: sum(map(itemgetter(1), pairs)) for max_index, pairs in grouped_pairs_by_index}
+    return {max_index: sum_top_k(map(itemgetter(1), pairs), 3) / 3 for max_index, pairs in grouped_pairs_by_index}
 
 
 def connect_stance_nodes(interactions: InteractionsGraph, authors_agg_preds: Dict[Any, np.ndarray], weight: float = 1.0) -> nx.Graph:
     weighted_edges = [(i.user1, i.user2, {"weight": i.data[i.WEIGHT_FIELD]}) for i in interactions.interactions]
 
-    authors_avg_preds = {author: aggregate_author_stance_preds(preds) for author, preds in authors_agg_preds.items()}
-    pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": weight * preds.get(POSITIVE_PRED_INDEX, 0.0)})for author, preds in authors_avg_preds.items()]
+    existing_authors = interactions.graph.nodes
+    authors_avg_preds = {author: aggregate_author_stance_preds(preds) for author, preds in authors_agg_preds.items()if author in existing_authors}
+    pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": weight * preds.get(POSITIVE_PRED_INDEX, 0.0)}) for author, preds in authors_avg_preds.items()]
     neg_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": weight * preds.get(NEGATIVE_PRED_INDEX, 0.0)}) for author, preds in authors_avg_preds.items()]
 
     total_stance_edges_weight = 2. * len(authors_agg_preds)
@@ -388,6 +399,22 @@ def connect_stance_nodes(interactions: InteractionsGraph, authors_agg_preds: Dic
     return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges + [constraint_edge])
     # return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges)
     # return nx.from_edgelist(weighted_edges + stance_edges + [constraint_edge])
+
+
+def are_confident_labels(authors_preds: Dict[Any, np.ndarray], confidence_threshold: float = 0.7,
+                         min_confident_authors: int = 1, authors: Optional[Set[Any]] = None) -> bool:
+
+    confident_authors_count = 0
+    for author, posts_preds in authors_preds.items():
+        if authors and author not in authors:
+            continue
+
+        if np.any(posts_preds > confidence_threshold):
+            confident_authors_count += 1
+            if confident_authors_count >= min_confident_authors:
+                return True
+
+    return False
 
 
 def process_stance(
@@ -400,7 +427,6 @@ def process_stance(
     results = ExperimentResults()
     print("Start processing authors stance")
     results.total_time.start()
-    first = True
     for i, conv in enumerate(pbar := tqdm(conversations)):
         results.total_count.increment()
 
@@ -424,6 +450,10 @@ def process_stance(
 
         # store zero-shot preds
         author_posts_preds = aggregate_authors_posts_preds(conv, zs_preds)
+
+        if are_confident_labels(author_posts_preds, min_confident_authors=3):
+            results.confident_convs.add(conv.id)
+
         for (model, strategy) in [(ZSSD_SUM, "sum"), (ZSSD_MAX, "max"), (ZSSD_AVG, "avg")]:
             author_preds = author_preds_from_zs_labels(author_posts_preds)
             results.author_predictions[conv.id][model] = author_preds
@@ -454,6 +484,10 @@ def process_stance(
 
         components = list(nx.connected_components(core_interactions.graph))
         core_interactions = core_interactions.get_subgraph(components[0])
+
+        if are_confident_labels(author_posts_preds, min_confident_authors=3, authors=set(core_interactions.graph.nodes)):
+            results.confident_core_convs.add(conv.id)
+
         pivot = get_pivot_node(core_interactions.graph, conv.root.node_id)
         maxcut = get_maxcut_results(core_interactions, pivot)
         results.maxcut_results[conv.id] = maxcut
@@ -478,7 +512,7 @@ def process_stance(
         results.author_predictions[conv.id][MCSN_CORE_MODEL] = preds
 
         # propagate results from core to full graph
-        preds = extend_preds(stance_interactions_graph, pivot, preds)
+        preds = extend_preds(interaction_graph.graph, pivot, preds)
         results.author_predictions[conv.id][MCSN_PRPG_MODEL] = preds
 
     results.total_time.end()
@@ -493,6 +527,8 @@ def results_to_df(results: ExperimentResults) -> pd.DataFrame:
         topic = conv.root.data["topic_name"]
         author_labels = get_author_labels(conv)
         all_posts_labels = get_posts_labels(conv)
+        confident_conv = conv_id in results.confident_convs
+        confident_core = conv_id in results.confident_core_convs
 
         for model in MODELS:
             author_preds = predictions.get(model, None)
@@ -510,7 +546,7 @@ def results_to_df(results: ExperimentResults) -> pd.DataFrame:
                           "authors": n_authors, "posts": conv.size, "model": model,
                           "author_label": author_label, "author_pred": author_preds.get(node.author),
                           "post_label": post_label, "post_pred": posts_preds.get(node.node_id),
-                          }
+                          "confident_conv": confident_conv, "confident_core": confident_core}
 
                 records.append(record)
 
@@ -538,7 +574,10 @@ def eval_results_per_conversation(results_df: pd.DataFrame) -> pd.DataFrame:
     results_df = results_df.dropna()
     for (conv_id, model), conv_df in results_df.groupby(["conv_id", "model"]):
         topic = conv_df.iloc[0]["topic"]
-        record = {"conv_id": conv_id, "topic": topic, "model": model}
+        confident_conv = conv_df.iloc[0]["confident_conv"]
+        confident_core = conv_df.iloc[0]["confident_core"]
+        record = {"conv_id": conv_id, "topic": topic, "model": model, "confident": confident_conv,
+                  "confident_core": confident_core}
 
         y_true, y_pred = conv_df["post_label"], conv_df["post_pred"]
         record.update(get_metrics(y_true, y_pred, suffix="post"))
@@ -556,20 +595,44 @@ def get_metric_columns(eval_df: pd.DataFrame) -> List[str]:
     return [col for col in eval_df.columns if (col.startswith("acc") or col.startswith("recall") or col.startswith("prec"))]
 
 
+def calculate_metrics_record(topic_df: pd.DataFrame, metric_columns: List[str], topic: str, model: str,
+                                   confident: Optional[str], core_confident: Optional[str]) -> dict:
+    record = {"topic": topic, "model": model, "convs": len(topic_df), "confident": confident,
+              "core_confident": core_confident}
+    for metric in metric_columns:
+        record.update({
+            f"{metric}-macro": topic_df[metric].mean(),
+            f"{metric}-std": topic_df[metric].std(),
+            f"{metric}-weighted": np.average(topic_df[metric], weights=topic_df["support"])
+        })
+    return record
+
+
 def eval_results_per_topic(conv_eval_df: pd.DataFrame) -> pd.DataFrame:
     metric_columns = get_metric_columns(conv_eval_df)
     records = []
-    for (topic, model), topic_df in conv_eval_df.groupby(["topic", "model"]):
-        record = {"topic": topic, "model": model, "convs": len(topic_df)}
-        for metric in metric_columns:
-            record.update({
-              f"{metric}-macro": topic_df[metric].mean(),
-              f"{metric}-std": topic_df[metric].std(),
-              f"{metric}-weighted": np.average(topic_df[metric], weights=topic_df["support"])
-            })
+    for (topic, model, confident, core_confident), topic_df in conv_eval_df.groupby(["topic", "model", "confident",
+                                                                                     "confident_core"]):
+        record = calculate_metrics_record(topic_df, metric_columns, topic, model, confident, core_confident)
         records.append(record)
 
-    return pd.DataFrame.from_records(records)
+    for (topic, model, confident), topic_df in conv_eval_df.groupby(["topic", "model", "confident"]):
+        record = calculate_metrics_record(topic_df, metric_columns, topic, model, confident, None)
+        records.append(record)
+
+    for (topic, model, core_confident), topic_df in conv_eval_df.groupby(["topic", "model", "confident_core"]):
+        record = calculate_metrics_record(topic_df, metric_columns, topic, model, None, core_confident)
+        records.append(record)
+
+    for (topic, model), topic_df in conv_eval_df.groupby(["topic", "model"]):
+        record = calculate_metrics_record(topic_df, metric_columns, topic, model, None, None)
+        records.append(record)
+
+    for model, topic_df in conv_eval_df.groupby(["model"]):
+        record = calculate_metrics_record(topic_df, metric_columns, None, model, None, None)
+        records.append(record)
+
+    return pd.DataFrame.from_records(records).sort_values(by=["topic", "model", "confident", "core_confident"])
 
 
 def is_relevant_conversation(conv: Conversation) -> bool:
@@ -618,11 +681,11 @@ if __name__ == "__main__":
 
     print("evaluate_results")
     conv_eval_df = eval_results_per_conversation(results_df)
-    conv_eval_df.to_csv("4forums-eval-conv.csv")
+    conv_eval_df.to_csv("4forums-eval-conv.csv", index=False, float_format="%.3f")
 
     eval_df = eval_results_per_topic(conv_eval_df)
     if args.outpath is not None:
         print(f"save eval results to {args.outpath}")
-        eval_df.to_csv(args.outpath, index=False)
+        eval_df.to_csv(args.outpath, index=False, float_format="%.3f")
 
     print(eval_df)
