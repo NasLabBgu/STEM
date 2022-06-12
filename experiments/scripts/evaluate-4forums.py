@@ -62,7 +62,7 @@ LabelsByConversation = Dict[Any, Dict[Any, int]]
 PostLabels = Dict[Any, Dict[Any, int]]
 
 # LOADING CONVERSATIONS
-fields_mapping = {
+FIELDS_MAPPING = {
     "node_id": "post_id",
     "author": "author",
     "timestamp": "timestamp",
@@ -79,7 +79,7 @@ EMPTY_ZS_PREDS = empty_zs_preds()
 
 def load_conversations_from_dataframe(path: str) -> Iterable[Conversation]:
     df = pd.read_csv(path, low_memory=False)
-    parser = DataFrameConversationReader(fields_mapping, conversation_id_column="conversation_id")
+    parser = DataFrameConversationReader(FIELDS_MAPPING, conversation_id_column="conversation_id")
     groups = df.groupby("conversation_id")
     for cid, raw_conversation in tqdm(groups, total=groups.ngroups):
         yield parser.parse(raw_conversation, conversation_id=cid)
@@ -387,14 +387,18 @@ def aggregate_author_stance_preds(preds: np.ndarray) -> Dict[int, float]:
 
 def connect_stance_nodes(interactions: InteractionsGraph, authors_agg_preds: Dict[Any, np.ndarray], weight: float = 1.0) -> nx.Graph:
     weighted_edges = [(i.user1, i.user2, {"weight": i.data[i.WEIGHT_FIELD]}) for i in interactions.interactions]
+    total_weight = sum(map(itemgetter("weight"), map(itemgetter(2), weighted_edges)))
 
     existing_authors = interactions.graph.nodes
-    authors_avg_preds = {author: aggregate_author_stance_preds(preds) for author, preds in authors_agg_preds.items()if author in existing_authors}
-    pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": weight * preds.get(POSITIVE_PRED_INDEX, 0.0)}) for author, preds in authors_avg_preds.items()]
-    neg_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": weight * preds.get(NEGATIVE_PRED_INDEX, 0.0)}) for author, preds in authors_avg_preds.items()]
+    authors_avg_preds = {author: aggregate_author_stance_preds(preds) for author, preds in authors_agg_preds.items() if author in existing_authors}
+    total_stance_edges_weight = sum(map(lambda x: x.get(POSITIVE_PRED_INDEX, 0.0) + x.get(NEGATIVE_PRED_INDEX, 0.0), authors_avg_preds.values()))
+    stance_weight_factor = weight * (total_weight / total_stance_edges_weight)
 
-    total_stance_edges_weight = 2. * len(authors_agg_preds)
-    constraint_edge = (POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE, {"weight": weight * total_stance_edges_weight})
+    pos_stance_edges = [(author, NEGATIVE_STANCE_NODE, {"weight": stance_weight_factor * preds.get(POSITIVE_PRED_INDEX, 0.0)}) for author, preds in authors_avg_preds.items()]
+    neg_stance_edges = [(author, POSITIVE_STANCE_NODE, {"weight": stance_weight_factor * preds.get(NEGATIVE_PRED_INDEX, 0.0)}) for author, preds in authors_avg_preds.items()]
+
+    # total_stance_edges_weight = 2. * len(authors_agg_preds)
+    constraint_edge = (POSITIVE_STANCE_NODE, NEGATIVE_STANCE_NODE, {"weight": total_weight})
 
     return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges + [constraint_edge])
     # return nx.from_edgelist(weighted_edges + pos_stance_edges + neg_stance_edges)
@@ -630,6 +634,18 @@ def eval_results_per_topic(conv_eval_df: pd.DataFrame) -> pd.DataFrame:
 
     for model, topic_df in conv_eval_df.groupby(["model"]):
         record = calculate_metrics_record(topic_df, metric_columns, None, model, None, None)
+        records.append(record)
+
+    for (model, confident), topic_df in conv_eval_df.groupby(["model", "confident"]):
+        record = calculate_metrics_record(topic_df, metric_columns, None, model, confident, None)
+        records.append(record)
+
+    for (model, core_confident), topic_df in conv_eval_df.groupby(["model", "confident_core"]):
+        record = calculate_metrics_record(topic_df, metric_columns, None, model, None, core_confident)
+        records.append(record)
+
+    for (model, confident, core_confident), topic_df in conv_eval_df.groupby(["model", "confident", "confident_core"]):
+        record = calculate_metrics_record(topic_df, metric_columns, None, model, confident, core_confident)
         records.append(record)
 
     return pd.DataFrame.from_records(records).sort_values(by=["topic", "model", "confident", "core_confident"])

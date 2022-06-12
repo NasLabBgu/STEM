@@ -1,9 +1,10 @@
-
-from typing import Tuple, NamedTuple, Iterable, Any
+from itertools import groupby
+from typing import Tuple, NamedTuple, Iterable, Any, List, Optional
 
 from conversant.conversation import NodeData
 from conversant.conversation.parse import ConversationParser, NamedTupleConversationReader
 from conversant.conversation.parse.conversation_parser import K, T
+from conversant.conversation import Conversation
 
 NamedTuples = Iterable[NamedTuple]
 
@@ -17,7 +18,7 @@ PARSE_STRATEGY = {
 NO_PARENT_VALUE = None
 
 
-class FourForumConversationParser(ConversationParser[Tuple[Any, NamedTuples], NamedTuple]):
+class IACConversationParser(ConversationParser[Tuple[Any, NamedTuples], NamedTuple]):
     def __init__(self):
         self.namedtuple_parser = NamedTupleConversationReader(PARSE_STRATEGY, NO_PARENT_VALUE)
 
@@ -29,3 +30,27 @@ class FourForumConversationParser(ConversationParser[Tuple[Any, NamedTuples], Na
 
     def iter_raw_nodes(self, raw_conversation: Tuple[Any, NamedTuples]) -> Iterable[T]:
         return self.namedtuple_parser.iter_raw_nodes(raw_conversation[1])
+
+
+class IACPostRecord(NamedTuple):
+    topic: int
+    topic_name: str
+    discussion_id: int
+    post_id: int
+    author_id: int
+    creation_date: str
+    parent: int
+    parent_missing: bool
+    text: str
+    quote_source_ids: List[int] # post ids of the quotes contained in this ppost
+    stance_id: int
+    stance_name: str
+    response_type: Optional[str]
+    url: str
+
+
+def build_iac_conversations(post_records: Iterable[IACPostRecord]) -> Iterable[Conversation]:
+    parser = IACConversationParser()
+    for discussion_id, posts in groupby(post_records, key=lambda r: r.discussion_id):
+        conversation = parser.parse((discussion_id, posts))
+        yield conversation

@@ -29,7 +29,7 @@ class AuthorLabel(NamedTuple):
             annotation.discussion_id,
             annotation.author_id,
             annotation.topic_id,
-            stance
+            stance if stance is not None else -1
         )
 
 

@@ -143,7 +143,7 @@ if __name__ == "__main__":
     parser.add_argument("out", type=str,
                         help="Output path to store the dataset in the new format (similar to VAST)")
     parser.add_argument("--only-with-topic", "-t", type=bool, default=True,
-                        help="indicates if to filter conversations without a known topic")
+                        help="indicates if to filter conversations without a3 known topic")
 
     args = parser.parse_args()
 
