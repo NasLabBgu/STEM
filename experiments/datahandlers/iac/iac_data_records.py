@@ -43,6 +43,23 @@ class DiscussionMetadata(NamedTuple):
     local_stance_mapping: Optional[Dict[int, int]]
 
 
+class DiscussionStanceRecord(NamedTuple):
+    discussion_id: int
+    discussion_stance_id: int
+    discussion_stance: str
+    topic_id: Optional[int]
+    topic_stance_id: Optional[int]
+
+    @staticmethod
+    def from_iterable(it_record: Iterable[Any]) -> 'DiscussionStanceRecord':
+        discussion_id, discussion_stance_id, discussion_stance, topic_id_str, topic_stance_id_str = list(it_record)
+        topic_id = int(topic_id_str) if topic_id_str != "\\N" else None
+        topic_stance_id = int(topic_stance_id_str) if topic_stance_id_str != "\\N" else None
+        return DiscussionStanceRecord(int(discussion_id), int(discussion_stance_id), discussion_stance, topic_id,
+                                      topic_stance_id)
+
+
+
 def load_discussion_mapping(data_dir: str) -> Dict[int, DiscussionRecord]:
     path = os.path.join(data_dir, "discussion.txt")
     with open(path, 'r') as f:

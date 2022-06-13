@@ -10,30 +10,12 @@ from conversant.conversation import Conversation
 from experiments.datahandlers.iac import IACPostRecord, IACRecordsLoader, RootlessIACRecordsLoader,\
     IACRecordsLoaderWithAuthorStanceInfer, build_iac_conversations
 from experiments.datahandlers.iac.iac_data_records import load_discussions_topic_mapping, load_topics_str_mapping, \
-    load_texts_map, DiscussionMetadata, load_discussion_mapping, load_topics_stances, QUOTES_FILENAME, load_quotes
+    load_texts_map, DiscussionMetadata, load_discussion_mapping, load_topics_stances, QUOTES_FILENAME, load_quotes, \
+    DiscussionStanceRecord
 
 POSTS_FILENAME = "post.txt"
 QUOTE_NODE_FIELD = "quote_source_ids"
 NON_RELEVANT_STANCE_CLASSES = {"unknown", "other", "undecided"}
-
-T = TypeVar('T', bound=NamedTuple)
-N = TypeVar('N', bound=NamedTuple)
-
-
-class DiscussionStanceRecord(NamedTuple):
-    discussion_id: int
-    discussion_stance_id: int
-    discussion_stance: str
-    topic_id: Optional[int]
-    topic_stance_id: Optional[int]
-
-    @staticmethod
-    def from_iterable(it_record: Iterable[Any]) -> 'DiscussionStanceRecord':
-        discussion_id, discussion_stance_id, discussion_stance, topic_id_str, topic_stance_id_str = list(it_record)
-        topic_id = int(topic_id_str) if topic_id_str != "\\N" else None
-        topic_stance_id = int(topic_stance_id_str) if topic_stance_id_str != "\\N" else None
-        return DiscussionStanceRecord(int(discussion_id), int(discussion_stance_id), discussion_stance, topic_id,
-                                      topic_stance_id)
 
 
 def load_discussion_stance(data_dir: str, discussion_topic_mapping: Dict[int, int]) -> Dict[int, Dict[int, int]]:
@@ -71,14 +53,6 @@ def load_discussions_metadata(data_dirpath: str) -> Dict[int, DiscussionMetadata
     return discussions_metadata
 
 
-def create_discussion_artificial_root(discussion: DiscussionMetadata) -> IACPostRecord:
-    title = discussion.record.title
-    return IACPostRecord(
-        discussion.topic_id, discussion.topic_str, discussion.discussion_id, -discussion.discussion_id,
-        discussion.record.op, "", -1, False,
-        title, title, [], -1, "neutral", "root", discussion.record.url, -1, "unknown")
-
-
 class CreateDebatePartialDataLoader(RootlessIACRecordsLoader):
 
     STANCE_ID_INDEX = 8
@@ -111,7 +85,7 @@ class CreateDebatePartialDataLoader(RootlessIACRecordsLoader):
 
         return self.UNKNOWN_STANCE_VALUE
 
-    def get_stance_name(self, discussion_id: int, stance_id: int) -> str:
+    def get_stance_name(self, discussion_id: int, stance_id: int) -> Optional[str]:
         stance_names = self.__discussions_metadata[discussion_id].stance_names
         if stance_id >= 0:
             return stance_names[stance_id]

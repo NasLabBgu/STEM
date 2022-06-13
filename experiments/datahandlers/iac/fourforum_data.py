@@ -69,7 +69,7 @@ class FourForumsDataLoader(IACRecordsLoader):
     def get_stance_id(self, author_id: int, discussion_id: int, post_id: int, record: Sequence[str]) -> int:
         return self.get_author_stance_id(author_id, discussion_id, post_id, record)
 
-    def get_stance_name(self, discussion_id: int, stance_id: int) -> str:
+    def get_stance_name(self, discussion_id: int, stance_id: int) -> Optional[str]:
         metadata = self.get_discussion_metadata(discussion_id)
         return metadata.stance_names[stance_id] if stance_id >= 0 else "unknown" if stance_id == -1 else "other"
 

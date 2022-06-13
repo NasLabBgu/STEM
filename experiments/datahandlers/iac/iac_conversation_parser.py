@@ -143,7 +143,7 @@ class IACRecordsLoader(abc.ABC, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_stance_name(self, discussion_id: int, stance_id: int) -> str:
+    def get_stance_name(self, discussion_id: int, stance_id: int) -> Optional[str]:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -244,29 +244,3 @@ def build_iac_conversations(post_records: Iterable[IACPostRecord]) -> Iterable[C
         posts = list(posts)
         conversation = parser.parse((discussion_id, posts))
         yield conversation
-
-"""
-    def iter_raw_records(self) -> Iterable[Sequence[str]]:
-        return self._delegate.iter_raw_records()
-
-    def get_discussion_metadata(self, discussion_id: int):
-        return self._delegate.get_discussion_metadata(discussion_id)
-
-    def get_text_mapping(self) -> Dict[int, str]:
-        return self._delegate.get_text_mapping()
-
-    def get_quotes(self, discussion_id: int, post_id: int) -> List[int]:
-        return self._delegate.get_quotes(discussion_id, post_id)
-
-    def get_stance_id(self, author_id: int, discussion_id: int, post_id: int, record: Sequence[str]) -> int:
-        return self._delegate.get_stance_id(author_id, discussion_id, post_id, record)
-
-    def get_stance_name(self, discussion_id: int, stance_id: int) -> str:
-        return self._delegate.get_stance_name(discussion_id, stance_id)
-
-    def get_response_type(self, record: Sequence[str]) -> str:
-        return self._delegate.get_response_type(record)
-
-    def get_author_stance_id(self, author_id: int, discussion_id: int, post_id: int, record: Sequence[str]) -> int:
-        return self._delegate.get_author_stance_id(author_id, discussion_id, post_id, record)
-        """
