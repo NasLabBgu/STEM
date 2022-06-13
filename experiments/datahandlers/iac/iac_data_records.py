@@ -21,7 +21,7 @@ class DiscussionRecord(NamedTuple):
     discussion_id: int
     url: str
     title: str
-    op: int
+    op: Optional[int]
     description_text_id: Optional[int]
 
     @staticmethod
@@ -30,7 +30,8 @@ class DiscussionRecord(NamedTuple):
         record = list(it_record)
         record += [None for _ in range(n_fields - len(record))]
         discussion_id, url, title, op, description = list(record)
-        return DiscussionRecord(int(discussion_id), url, title, int(op), description)
+        op = -1 if op == NULL_VALUE else int(op)
+        return DiscussionRecord(int(discussion_id), url, title, op, description)
 
 
 class DiscussionMetadata(NamedTuple):
@@ -118,6 +119,6 @@ def load_topics_stances(data_dir: str) -> Dict[int, Dict[int, str]]:
     with open(path, 'r') as f:
         lines = f.read().strip().split("\n")
         records = map(lambda l: tuple(map(str.strip, l.strip().split("\t"))), lines)
-        return{int(topic_id): {int(r[1]): r[2] for r in topic_stance_records}
+        return {int(topic_id): {int(r[1]): r[2] for r in topic_stance_records}
                for topic_id, topic_stance_records in groupby(records, key=itemgetter(0))
                }

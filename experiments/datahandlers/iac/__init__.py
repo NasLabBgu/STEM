@@ -1,2 +1,5 @@
+from experiments.datahandlers.iac.fourforum_data import FourForumsDataLoader
+from experiments.datahandlers.iac.createdebate_data import CreateDebateDataLoader
+from experiments.datahandlers.iac.iac_conversation_parser import build_iac_conversations
 from experiments.datahandlers.iac.fourforum_interactions import FourForumInteractionsBuilder
 

@@ -48,7 +48,8 @@ def load_discussion_stance(data_dir: str, discussion_topic_mapping: Dict[int, in
 
         discussion_stance_mapping = {}
         for discussion_id, discussion_records in groupby(records, key=lambda r: r.discussion_id):
-            topic_id = discussion_topic_mapping[discussion_id]
+            discussion_records = list(discussion_records)
+            topic_id = discussion_topic_mapping.get(discussion_id)
             stance_mapping = {r.discussion_stance_id: r.topic_stance_id for r in discussion_records if
                               r.topic_id == topic_id}
             discussion_stance_mapping[discussion_id] = stance_mapping
@@ -66,9 +67,9 @@ def load_discussions_metadata(data_dirpath: str) -> Dict[int, DiscussionMetadata
     discussions_metadata = {}
     for d in discussions_mapping.values():
         discussion_id = d.discussion_id
-        topic_id = discussions_topic_mapping[discussion_id]
-        metadata = DiscussionMetadata(discussion_id, d, topic_id, topics_str_mapping[topic_id],
-                                      topics_stance_names.get(topic_id, None),
+        topic_id = discussions_topic_mapping.get(discussion_id)
+        topic_name = topics_str_mapping[topic_id] if topic_id is not None else None
+        metadata = DiscussionMetadata(discussion_id, d, topic_id, topic_name, topics_stance_names.get(topic_id, None),
                                       discussion_stance_mapping.get(discussion_id))
         discussions_metadata[discussion_id] = metadata
 
@@ -79,14 +80,12 @@ def create_discussion_artificial_root(discussion: DiscussionMetadata) -> IACPost
     title = discussion.record.title
     return IACPostRecord(
         discussion.topic_id, discussion.topic_str, discussion.discussion_id, -discussion.discussion_id,
-        discussion.record.op, "", -1, False,
-        title, title, [], -1, "neutral", "root", discussion.record.url, -1, "unknown")
+        discussion.record.op, "", None, False, title, title, [], -1, "neutral", "root", discussion.record.url, -1,
+        "unknown")
 
 
-class CreateDebateDataLoader:
+class ConvinceMeDataLoader:
     def __init__(self, data_dirpath: str):
-        quotes_path = os.path.join(data_dirpath, QUOTES_FILENAME)
-        self.__quotes_mapping = load_quotes(quotes_path)
         self.__text_mapping = load_texts_map(data_dirpath)
         self.__discussions_metadata = load_discussions_metadata(data_dirpath)
         self.__discussions_artifical_roots = {d.discussion_id: create_discussion_artificial_root(d)
@@ -109,25 +108,31 @@ class CreateDebateDataLoader:
         post_id = int(record[1])
         author_id = int(record[2])
         creation_date = str(record[3])
-        quotes = self.__quotes_mapping.get((discussion_id, post_id)) if self.__quotes_mapping is not None else []
+        quotes = []
         text = self.__text_mapping.get(int(record[6]), "[deleted]") if self.__text_mapping is not None else ""
-        stance_id = metadata.local_stance_mapping.get(int(record[8]), -9) if record[8] != "\\N" else -1
+        stance_id = int(record[8]) if record[8] != "\\N" else -1
+        if (topic_id is not None) and (stance_id != -1):
+            stance_id = metadata.local_stance_mapping.get(stance_id, -9)
+
         stance_name = self.__get_stance_name(discussion_id, stance_id)
-        response_type = record[9]
+        response_type = "rebuttal" if record[9] == '1' else "other"
         parent_id = self.__get_parent_id(record[4], discussion_id)
         parent_missing = bool(int(record[5])) or bool(parent_id)
         return IACPostRecord(topic_id, metadata.topic_str, discussion_id, post_id, author_id, creation_date, parent_id,
                              parent_missing, metadata.record.title, text, quotes, stance_id, stance_name, response_type, metadata.record.url,
                              -1, "unknown")
 
-    def __get_parent_id(self, raw_parent_id: str, discussion_id: int) -> Union[int, None]:
+    def __get_parent_id(self, raw_parent_id: str, discussion_id: int) -> int:
         if raw_parent_id == ROOT_PARENT_ID:
             return self.__discussions_artifical_roots[discussion_id].post_id
 
         return int(raw_parent_id)
 
-    def __get_stance_name(self, discussion_id: int, stance_id: int) -> str:
+    def __get_stance_name(self, discussion_id: int, stance_id: int) -> Optional[str]:
         stance_names = self.__discussions_metadata[discussion_id].stance_names
+        if stance_names is None:
+            return None
+
         return stance_names[stance_id] if stance_id >= 0 else "unknown" if stance_id == -1 else "other"
 
     def __infer_authors_stances(self, discussion_records: Iterable[IACPostRecord]) -> Iterable[IACPostRecord]:
@@ -184,31 +189,9 @@ def copy_namedtuple(nt: N, **modifications: Any) -> N:
     return type(nt)(**attrs)
 
 
-
-# def infer_authors_stances(conv: Conversation) -> Dict[Any, AuthorStance]:
-#     topic = conv.root.node_data.data["topic"]
-#     discussion_id = conv.id
-#     authors_stances: Dict[Any, List[int]] = {}
-#     stance_names = {}
-#     for _, node in conv.iter_conversation():
-#         author = node.author
-#         posts_stances = authors_stances.setdefault(author, [])
-#         post_stance = node.node_data.data["stance_id"]
-#         if post_stance >= 0:
-#             posts_stances.append(post_stance)
-#             if post_stance not in stance_names:
-#                 stance_names[post_stance] = node.node_data.data["stance_name"]
-#
-#     # Aggregate stance per author
-#     authors_agg_stance = {author: get_most_common(stances) if len(stances) > 0 else None
-#                           for author, stances in authors_stances.items()}
-#
-#     return {author: AuthorStance(discussion_id, author, topic, stance, stance_names.get(stance))
-#             for author, stance in authors_agg_stance.items()}
-
 if __name__ == "__main__":
-    data_path = "../../../experiments/data/createdebate_released"
-    loader = CreateDebateDataLoader(data_path)
+    data_path = "../../../experiments/data/convinceme"
+    loader = ConvinceMeDataLoader(data_path)
     records = loader.load_post_records()
     convs = tqdm.tqdm(build_iac_conversations(records))
     convs = iter(convs)

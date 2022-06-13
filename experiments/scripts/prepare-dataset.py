@@ -10,6 +10,9 @@ from experiments.datahandlers.loaders import load_conversations
 from experiments.datahandlers.iac.fourforum_labels import load_author_labels as load_4forums_author_labels
 
 
+__VERSION__ = "v-4.0.1"
+
+
 def up_to_root() -> str:
     file = os.path.abspath(__file__)
     current_dir = os.path.dirname(file)
@@ -68,6 +71,8 @@ def transform_dataframe(data: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
     data.insert(2, "parent_post_id", absolute_parent_ids)
     del data["parent_id"]
 
+    data["post_label"] = data["data.stance_id"]
+    data["author_label"] = data["data.author_stance_id"]
     data["text"] = data["data.text"]
     data.loc[data["text"].str.len() == 0, "text"] = "[EMPTY]"
     data["topic_id"] = data["data.topic"]
@@ -140,7 +145,7 @@ if __name__ == "__main__":
                         help="name of the dataset to prepare")
     parser.add_argument("path", type=str,
                         help="Path to the IAC directory containing all dataset as downloaded and extracted")
-    parser.add_argument("out", type=str,
+    parser.add_argument("--out-prefix", "-o", type=str, default="conversations",
                         help="Output path to store the dataset in the new format (similar to VAST)")
     parser.add_argument("--only-with-topic", "-t", type=bool, default=True,
                         help="indicates if to filter conversations without a3 known topic")
@@ -149,10 +154,9 @@ if __name__ == "__main__":
 
     convs = load_conversations(args.dataset, args.path)
     if args.only_with_topic:
-        convs = list(filter(lambda conv: conv.root.data["topic"] != -1, convs))
+        convs = list(filter(lambda conv: conv.root.data["topic"] != -1 or conv.root.data["topic"] is not None, convs))
 
     df = conversations_to_dataframe(convs)
-    author_labels_per_conversation, post_labels_per_conversation = get_4forums_labels(args.path)
-    df = add_labels(df, post_labels_per_conversation, author_labels_per_conversation)
     df = transform_dataframe(df, args.dataset)
-    df.to_csv(args.out, index=False)
+    outpath = f"{args.out_prefix}-{__VERSION__}.csv"
+    df.to_csv(outpath, index=False)

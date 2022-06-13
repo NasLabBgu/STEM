@@ -4,39 +4,36 @@ import pandas as pd
 from tqdm.auto import tqdm
 
 from conversant.conversation import Conversation
-from conversation.parse import DataFrameConversationReader
-from experiments.datahandlers.iac.createdebate_data import CreateDebateDataLoader
 
-from experiments.datahandlers.iac.fourforum_data import \
-    load_post_records as load_4forums_post_records,\
-    build_conversations as build_4forums_conversations
-
-from experiments.datahandlers.iac.createdebate_data import \
-    build_conversations as build_cd_conversations
-
+from experiments.datahandlers.iac import FourForumsDataLoader, CreateDebateDataLoader, build_iac_conversations
+from experiments.datahandlers.iac.convinceme_data import ConvinceMeDataLoader
 
 ConversationsLoader = Callable[[str], List[Conversation]]
 
-LabelsLoader = Callable[[str]]
-
 
 def load_4forums_conversations(data_dir: str) -> List[Conversation]:
-    records = tqdm(load_4forums_post_records(data_dir))
-    return list(build_4forums_conversations(records))
+    loader = FourForumsDataLoader(data_dir)
+    records = tqdm(loader.load_post_records())
+    return list(build_iac_conversations(records))
 
 
 def load_cd_conversations(data_dir: str) -> List[Conversation]:
     loader = CreateDebateDataLoader(data_dir)
     records = tqdm(loader.load_post_records())
-    return list(build_cd_conversations(records))
+    return list(build_iac_conversations(records))
+
+
+def load_cm_conversations(data_dir: str) -> List[Conversation]:
+    loader = ConvinceMeDataLoader(data_dir)
+    records = tqdm(loader.load_post_records())
+    return list(build_iac_conversations(records))
 
 
 conversation_loaders: Dict[str, ConversationsLoader] = {
     "4forums": load_4forums_conversations,
-    "createdebate": load_cd_conversations
+    "createdebate": load_cd_conversations,
+    "convinceme": load_cm_conversations
 }
-
-labels_loaders: Dict[str, LabelsLoader]
 
 
 def load_conversations(dataset_name: str, basedir: str) -> List[Conversation]:
