@@ -7,6 +7,7 @@ from conversant.conversation import NodeData
 from conversant.conversation.parse import ConversationParser, NamedTupleConversationReader
 from conversant.conversation.parse.conversation_parser import T
 from conversant.conversation import Conversation
+from experiments.datahandlers.iac.delegation_utils import DelegatingMeta
 from experiments.datahandlers.iac.iac_data_records import DiscussionMetadata
 
 NamedTuples = Iterable[NamedTuple]
@@ -58,7 +59,7 @@ class IACPostRecord(NamedTuple):
     post_id: int
     author_id: int
     creation_date: str
-    parent: int
+    parent: Optional[int]
     parent_missing: bool
     discussion_title: str
     text: str
@@ -71,7 +72,10 @@ class IACPostRecord(NamedTuple):
     author_stance_name: str
 
 
-class IACRecordsLoader(abc.ABC):
+class IACRecordsLoader(abc.ABC, metaclass=abc.ABCMeta):
+
+    NULL_VALUE = "\\N"
+    ROOT_PARENT_ID = NULL_VALUE
 
     DISCUSSION_ID_INDEX = 0
     POST_ID_INDEX = 1
@@ -80,6 +84,11 @@ class IACRecordsLoader(abc.ABC):
     PARENT_ID_INDEX = 4
     PARENT_MISSING_INDEX = 5
     TEXT_ID_INDEX = 6
+
+    UNKNOWN_STANCE_VALUE = -1
+    UNKNOWN_STANCE_NAME = "unknown"
+    OTHER_STANCE_VALUE = -9
+    OTHER_STANCE_NAME = "other"
 
 
     def load_post_records(self) -> Iterable[IACPostRecord]:
@@ -141,9 +150,11 @@ class IACRecordsLoader(abc.ABC):
     def get_response_type(self, record: Sequence[str]) -> str:
         raise NotImplementedError
 
-    @abc.abstractmethod
     def get_parent_id(self, raw_parent_id: str, discussion_id: int) -> Optional[int]:
-        raise NotImplementedError
+        if raw_parent_id == self.ROOT_PARENT_ID:
+            return None
+
+        return int(raw_parent_id)
 
     @abc.abstractmethod
     def get_author_stance_id(self, author_id: int, discussion_id: int, post_id: int, record: Sequence[str]) -> int:
@@ -155,13 +166,13 @@ class IACRecordsLoader(abc.ABC):
         return bool(int(record[idx])) or bool(parent_id)
 
 
-class IACRecordsLoaderWithAuthorStanceInfer(IACRecordsLoader, abc.ABC):
+class IACRecordsLoaderWithAuthorStanceInfer(IACRecordsLoader, metaclass=DelegatingMeta):
 
     def __init__(self, iac_records_loader: IACRecordsLoader):
-        self.__iac_records_loader = iac_records_loader
+        self._delegate = iac_records_loader
 
     def load_post_records(self) -> Iterable[IACPostRecord]:
-        records = self.__iac_records_loader.load_post_records()
+        records = self._delegate.load_post_records()
         for discussion_id, discussion_records in groupby(records, key=lambda p: p.discussion_id):
             records_with_author_stance = self.__infer_authors_stances(discussion_records)
             yield from records_with_author_stance
@@ -181,7 +192,7 @@ class IACRecordsLoaderWithAuthorStanceInfer(IACRecordsLoader, abc.ABC):
                     stance_names[post_stance] = record.stance_name
 
         # Aggregate stance per author
-        authors_agg_stance = {author: get_most_common(stances) if len(stances) > 0 else None
+        authors_agg_stance = {author: get_most_common(stances) if len(stances) > 0 else self.UNKNOWN_STANCE_VALUE
                               for author, stances in authors_stances.items()}
 
         for record in records:
@@ -193,20 +204,20 @@ class IACRecordsLoaderWithAuthorStanceInfer(IACRecordsLoader, abc.ABC):
 
 class RootlessIACRecordsLoader(IACRecordsLoader, abc.ABC):
 
-    def __init__(self, iac_records_loader: IACRecordsLoader):
-        self.__iac_records_loader = iac_records_loader
+    def __init__(self):
+        super().__init__()
         self.__artificial_roots: Dict[int, IACPostRecord] = {}
 
     def load_post_records(self) -> Iterable[IACPostRecord]:
-        records = self.__iac_records_loader.load_post_records()
+        records = super().load_post_records()
         for discussion_id, discussion_records in groupby(records, key=lambda p: p.discussion_id):
             yield self.__get_artificial_root(discussion_id)
             yield from discussion_records
 
     def get_parent_id(self, raw_parent_id: str, discussion_id: int) -> int:
-        parent_id = self.__iac_records_loader.get_parent_id(raw_parent_id, discussion_id)
+        parent_id = super().get_parent_id(raw_parent_id, discussion_id)
         if parent_id is None:
-            parent_id = self.__get_artificial_root(discussion_id).parent
+            parent_id = self.__get_artificial_root(discussion_id).post_id
 
         return parent_id
 
@@ -224,12 +235,38 @@ class RootlessIACRecordsLoader(IACRecordsLoader, abc.ABC):
         title = discussion.record.title
         return IACPostRecord(
             discussion.topic_id, discussion.topic_str, discussion.discussion_id, -discussion.discussion_id,
-            discussion.record.op, "", -1, False,
-            title, title, [], -1, "neutral", "root", discussion.record.url, -1, "unknown")
+            discussion.record.op, "", None, False, title, title, [], -1, "neutral", "root", discussion.record.url, -1, "unknown")
 
 
 def build_iac_conversations(post_records: Iterable[IACPostRecord]) -> Iterable[Conversation]:
     parser = IACConversationParser()
     for discussion_id, posts in groupby(post_records, key=lambda r: r.discussion_id):
+        posts = list(posts)
         conversation = parser.parse((discussion_id, posts))
         yield conversation
+
+"""
+    def iter_raw_records(self) -> Iterable[Sequence[str]]:
+        return self._delegate.iter_raw_records()
+
+    def get_discussion_metadata(self, discussion_id: int):
+        return self._delegate.get_discussion_metadata(discussion_id)
+
+    def get_text_mapping(self) -> Dict[int, str]:
+        return self._delegate.get_text_mapping()
+
+    def get_quotes(self, discussion_id: int, post_id: int) -> List[int]:
+        return self._delegate.get_quotes(discussion_id, post_id)
+
+    def get_stance_id(self, author_id: int, discussion_id: int, post_id: int, record: Sequence[str]) -> int:
+        return self._delegate.get_stance_id(author_id, discussion_id, post_id, record)
+
+    def get_stance_name(self, discussion_id: int, stance_id: int) -> str:
+        return self._delegate.get_stance_name(discussion_id, stance_id)
+
+    def get_response_type(self, record: Sequence[str]) -> str:
+        return self._delegate.get_response_type(record)
+
+    def get_author_stance_id(self, author_id: int, discussion_id: int, post_id: int, record: Sequence[str]) -> int:
+        return self._delegate.get_author_stance_id(author_id, discussion_id, post_id, record)
+        """

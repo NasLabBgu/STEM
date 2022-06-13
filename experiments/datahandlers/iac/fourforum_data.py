@@ -76,12 +76,6 @@ class FourForumsDataLoader(IACRecordsLoader):
     def get_response_type(self, record: Sequence[str]) -> str:
         return "reply"
 
-    def get_parent_id(self, raw_parent_id: str, discussion_id: int) -> Optional[int]:
-        if raw_parent_id == ROOT_PARENT_ID:
-            return None
-
-        return int(raw_parent_id)
-
     def get_author_stance_id(self, author_id: int, discussion_id: int, post_id: int, record: Sequence[str]) -> int:
         discussion_stances = self.__author_labels.get(discussion_id)
         if discussion_stances is None:
@@ -129,23 +123,3 @@ if __name__ == "__main__":
 
     # print(nodes_with_quotes)
     # print(next(convs))
-
-"""
-"""
-
-# def __create_post_record(self, record: List[str]) -> IACPostRecord:
-#     discussion_id = int(record[0])
-#     metadata = self.__discussions_metadata[discussion_id]
-#     topic_id = metadata.topic_id
-#     post_id = int(record[1])
-#     author_id = int(record[2])
-#     creation_date = str(record[3])
-#     quotes = self.__quotes_mapping.get((discussion_id, post_id)) if self.__quotes_mapping is not None else []
-#     text = self.__text_mapping.get(int(record[6]), "[deleted]") if self.__text_mapping is not None else ""
-#     stance_id = self.__get_author_stance_id(discussion_id, author_id)
-#     stance_name = metadata.stance_names[stance_id] if stance_id >= 0 else "unknown" if stance_id == -1 else "other"
-#     parent_id = self.__get_parent_id(record[4])
-#     parent_missing = bool(int(record[5])) or bool(parent_id)
-#     return IACPostRecord(topic_id, metadata.topic_str, discussion_id, post_id, author_id, creation_date, parent_id,
-#                          parent_missing, metadata.record.title, text, quotes, stance_id, stance_name, None, metadata.record.url, stance_id,
-#                          stance_name)

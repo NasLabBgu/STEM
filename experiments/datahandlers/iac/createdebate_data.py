@@ -1,20 +1,16 @@
 import os
 import csv
-from collections import Counter
-from operator import itemgetter
 
 from itertools import groupby
-from typing import NamedTuple, Iterable, List, Union, Dict, Any, TypeVar, Optional, Type
+from typing import NamedTuple, Iterable, List, Dict, Any, TypeVar, Optional, Sequence
 
 import tqdm
 
 from conversant.conversation import Conversation
-from conversant.interactions import InteractionsGraph
-from experiments.datahandlers.iac.iac_conversation_parser import IACPostRecord, IACConversationParser, \
-    build_iac_conversations
+from experiments.datahandlers.iac import IACPostRecord, IACRecordsLoader, RootlessIACRecordsLoader,\
+    IACRecordsLoaderWithAuthorStanceInfer, build_iac_conversations
 from experiments.datahandlers.iac.iac_data_records import load_discussions_topic_mapping, load_topics_str_mapping, \
-    load_texts_map, DiscussionMetadata, load_discussion_mapping, load_topics_stances, QUOTES_FILENAME, load_quotes, \
-    ROOT_PARENT_ID
+    load_texts_map, DiscussionMetadata, load_discussion_mapping, load_topics_stances, QUOTES_FILENAME, load_quotes
 
 POSTS_FILENAME = "post.txt"
 QUOTE_NODE_FIELD = "quote_source_ids"
@@ -83,132 +79,63 @@ def create_discussion_artificial_root(discussion: DiscussionMetadata) -> IACPost
         title, title, [], -1, "neutral", "root", discussion.record.url, -1, "unknown")
 
 
-class CreateDebateDataLoader:
+class CreateDebatePartialDataLoader(RootlessIACRecordsLoader):
+
+    STANCE_ID_INDEX = 8
+
     def __init__(self, data_dirpath: str):
-        quotes_path = os.path.join(data_dirpath, QUOTES_FILENAME)
-        self.__quotes_mapping = load_quotes(quotes_path)
+        super().__init__()
+        self.__data_dirpath = data_dirpath
+        self.__quotes_mapping = load_quotes(os.path.join(data_dirpath, QUOTES_FILENAME))
         self.__text_mapping = load_texts_map(data_dirpath)
         self.__discussions_metadata = load_discussions_metadata(data_dirpath)
-        self.__discussions_artifical_roots = {d.discussion_id: create_discussion_artificial_root(d)
-                                              for d in self.__discussions_metadata.values()}
-        self.__data_dirpath = data_dirpath
 
-    def load_post_records(self) -> Iterable[IACPostRecord]:
+    def iter_raw_records(self) -> Iterable[Sequence[str]]:
         posts_path = os.path.join(self.__data_dirpath, POSTS_FILENAME)
         with open(posts_path, 'r') as f:
-            reader = csv.reader(f, delimiter='\t')
-            posts = map(self.__create_post_record, reader)
-            for discussion_id, discussion_posts in groupby(posts, key=lambda p: p.discussion_id):
-                yield self.__discussions_artifical_roots[discussion_id]
-                yield from self.__infer_authors_stances(discussion_posts)
+            yield from csv.reader(f, delimiter='\t')
 
-    def __create_post_record(self, record: List[str]) -> IACPostRecord:
-        discussion_id = int(record[0])
-        metadata = self.__discussions_metadata[discussion_id]
-        topic_id = metadata.topic_id
-        post_id = int(record[1])
-        author_id = int(record[2])
-        creation_date = str(record[3])
-        quotes = self.__quotes_mapping.get((discussion_id, post_id)) if self.__quotes_mapping is not None else []
-        text = self.__text_mapping.get(int(record[6]), "[deleted]") if self.__text_mapping is not None else ""
-        stance_id = metadata.local_stance_mapping.get(int(record[8]), -9) if record[8] != "\\N" else -1
-        stance_name = self.__get_stance_name(discussion_id, stance_id)
-        response_type = record[9]
-        parent_id = self.__get_parent_id(record[4], discussion_id)
-        parent_missing = bool(int(record[5])) or bool(parent_id)
-        return IACPostRecord(topic_id, metadata.topic_str, discussion_id, post_id, author_id, creation_date, parent_id,
-                             parent_missing, metadata.record.title, text, quotes, stance_id, stance_name, response_type, metadata.record.url,
-                             -1, "unknown")
+    def get_discussion_metadata(self, discussion_id: int):
+        return self.__discussions_metadata[discussion_id]
 
-    def __get_parent_id(self, raw_parent_id: str, discussion_id: int) -> Union[int, None]:
-        if raw_parent_id == ROOT_PARENT_ID:
-            return self.__discussions_artifical_roots[discussion_id].post_id
+    def get_text_mapping(self) -> Dict[int, str]:
+        return self.__text_mapping
 
-        return int(raw_parent_id)
+    def get_quotes(self, discussion_id: int, post_id: int) -> List[int]:
+        return self.__quotes_mapping.get((discussion_id, post_id)) if self.__quotes_mapping is not None else []
 
-    def __get_stance_name(self, discussion_id: int, stance_id: int) -> str:
+    def get_stance_id(self, author_id: int, discussion_id: int, post_id: int, record: Sequence[str]) -> int:
+        metadata = self.get_discussion_metadata(discussion_id)
+        if record[8] != self.NULL_VALUE:
+            return metadata.local_stance_mapping.get(int(record[self.STANCE_ID_INDEX]), self.OTHER_STANCE_VALUE)
+
+        return self.UNKNOWN_STANCE_VALUE
+
+    def get_stance_name(self, discussion_id: int, stance_id: int) -> str:
         stance_names = self.__discussions_metadata[discussion_id].stance_names
-        return stance_names[stance_id] if stance_id >= 0 else "unknown" if stance_id == -1 else "other"
+        if stance_id >= 0:
+            return stance_names[stance_id]
+        if stance_id == -1:
+            return self.UNKNOWN_STANCE_NAME
 
-    def __infer_authors_stances(self, discussion_records: Iterable[IACPostRecord]) -> Iterable[IACPostRecord]:
-        records = list(discussion_records)
-        discussion_id = records[0].discussion_id
-        authors_stances: Dict[Any, List[int]] = {}
-        stance_names = {}
-        for record in records:
-            author = record.author_id
-            posts_stances = authors_stances.setdefault(author, [])
-            post_stance = record.stance_id
-            if post_stance >= 0:
-                posts_stances.append(post_stance)
-                if post_stance not in stance_names:
-                    stance_names[post_stance] = record.stance_name
+        return self.OTHER_STANCE_NAME
 
-        # Aggregate stance per author
-        authors_agg_stance = {author: get_most_common(stances) if len(stances) > 0 else None
-                              for author, stances in authors_stances.items()}
+    def get_response_type(self, record: Sequence[str]) -> str:
+        return record[9]
 
-        for record in records:
-            author_stance_id = authors_agg_stance[record.author_id]
-            author_stance_name = self.__get_stance_name(discussion_id, author_stance_id) if author_stance_id is not None else "unknown"
-            new_record = copy_namedtuple(record, author_stance_id=author_stance_id, author_stance_name=author_stance_name)
-            yield new_record
+    def get_author_stance_id(self, author_id: int, discussion_id: int, post_id: int, record: Sequence[str]) -> int:
+        return -1
 
 
-# def build_interaction_graphs(convs: Iterable[Conversation]) -> Iterable[InteractionsGraph]:
-#     interactions_parser = FourForumInteractionsBuilder()
-#     return map(interactions_parser.build, convs)
+def get_createdebate_records_loader(data_dirpath: str) -> IACRecordsLoader:
+    partial_loader = CreateDebatePartialDataLoader(data_dirpath)
+    return IACRecordsLoaderWithAuthorStanceInfer(partial_loader)
 
 
-class AuthorStance(NamedTuple):
-    discussion_id: int
-    author_id: int
-    topic_id: Optional[int]
-    stance_id: Optional[int]
-    stance_name: Optional[str]
-
-
-K = TypeVar('K')
-
-
-def get_most_common(it: Iterable[K]) -> K:
-    return Counter(filter(lambda e: e is not None, it)).most_common(1)[0][0]
-
-
-def copy_namedtuple(nt: N, **modifications: Any) -> N:
-    attrs = nt._asdict()
-    for k, v in modifications.items():
-        if k in attrs:
-            attrs[k] = v
-
-    return type(nt)(**attrs)
-
-
-
-# def infer_authors_stances(conv: Conversation) -> Dict[Any, AuthorStance]:
-#     topic = conv.root.node_data.data["topic"]
-#     discussion_id = conv.id
-#     authors_stances: Dict[Any, List[int]] = {}
-#     stance_names = {}
-#     for _, node in conv.iter_conversation():
-#         author = node.author
-#         posts_stances = authors_stances.setdefault(author, [])
-#         post_stance = node.node_data.data["stance_id"]
-#         if post_stance >= 0:
-#             posts_stances.append(post_stance)
-#             if post_stance not in stance_names:
-#                 stance_names[post_stance] = node.node_data.data["stance_name"]
-#
-#     # Aggregate stance per author
-#     authors_agg_stance = {author: get_most_common(stances) if len(stances) > 0 else None
-#                           for author, stances in authors_stances.items()}
-#
-#     return {author: AuthorStance(discussion_id, author, topic, stance, stance_names.get(stance))
-#             for author, stance in authors_agg_stance.items()}
 
 if __name__ == "__main__":
     data_path = "../../../experiments/data/createdebate_released"
-    loader = CreateDebateDataLoader(data_path)
+    loader = get_createdebate_records_loader(data_path)
     records = loader.load_post_records()
     convs = tqdm.tqdm(build_iac_conversations(records))
     convs = iter(convs)
