@@ -179,7 +179,7 @@ def visualize_discussion_tree(conv: Conversation):
                 showarrow=False)
         )
 
-    fig.update_layout(title=f"Discussion Tree - {conv.id}",
+    fig.update_layout(title=f"Discussion Tree - {conv.id} - {conv.root.data['title']}",
                       annotations=annotations,
                       font_size=12,
                       showlegend=False,
@@ -195,7 +195,7 @@ def visualize_discussion_tree(conv: Conversation):
 
 if __name__ == "__main__":
     path = "../data/fourforums/4forums-v4.0.0.csv"
-    target_conv_id = 95
+    target_conv_id = 173
 
     convs = iter(load_conversations_from_dataframe(path))
     conv = next(convs)

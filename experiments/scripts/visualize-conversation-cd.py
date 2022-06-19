@@ -17,7 +17,8 @@ from conversation import Conversation, ConversationNode
 from conversation.parse import DataFrameConversationReader
 
 # COLORS = px.colors.qualitative.Plotly
-from experiments.datahandlers.iac.createdebate_data import CreateDebateDataLoader
+from experiments.datahandlers.iac import get_createdebate_records_loader
+
 from experiments.datahandlers.iac.iac_conversation_parser import build_iac_conversations
 
 s="""
@@ -91,8 +92,11 @@ def is_relevant_conversation(conv: Conversation) -> bool:
     return bool(get_author_labels(conv))
 
 
-def build_tree(conv: Conversation) -> Tuple[igraph.Graph, Dict[ConversationNode, int]]:
+def build_tree(conv: Conversation, ignore_shallow: bool = True) -> Tuple[igraph.Graph, Dict[ConversationNode, int]]:
     _, nodes = zip(*list(conv.iter_conversation()))
+    if ignore_shallow:
+        nodes = [n for n in nodes if (not n.is_leaf) or (n.depth > 1)]
+
     nodes_indices = {node.node_id: i for i, node in enumerate(nodes)}
     edges = [(nodes_indices[n.node_id], nodes_indices[n.parent_id]) for n in nodes if n.parent_id is not None]
     g = igraph.Graph(n=len(nodes), edges=edges)
@@ -108,7 +112,7 @@ def customwrap(s: str, min_width: int = 60, extra: int = 20) -> str:
     return "<br>".join(textwrap.wrap(s, width=width))
 
 
-def visualize_discussion_tree(conv: Conversation):
+def visualize_discussion_tree(conv: Conversation, ignore_shallow: bool = True):
     tree, nodes_index_map = build_tree(conv)
     n_nodes = tree.vcount()
     layout = tree.layout("rt", root=nodes_index_map[conv.root.node_id])
@@ -131,7 +135,10 @@ def visualize_discussion_tree(conv: Conversation):
     authors = [None for _ in range(n_nodes)]
     timestamps = [None for _ in range(n_nodes)]
     for _, node in conv.iter_conversation():
-        node_index = nodes_index_map[node.node_id]
+        node_index = nodes_index_map.get(node.node_id)
+        if node_index is None:
+            continue
+
         ids[node_index] = node.node_id
         authors[node_index] = node.author
         timestamps[node_index] = node.node_data.timestamp
@@ -197,14 +204,12 @@ def visualize_discussion_tree(conv: Conversation):
 
 if __name__ == "__main__":
     data_path = "/Users/ronpick/workspace/cmv-stance-classification/experiments/data/createdebate_released"
-    loader = CreateDebateDataLoader(data_path)
+    loader = get_createdebate_records_loader(data_path)
     records = loader.load_post_records()
     convs = build_iac_conversations(records)
 
     conv = next(convs)
-    # conv_id = None
-    # while conv.id != target_conv_id:
-    #     conv = next(convs)
+
 
     visualize_discussion_tree(conv)
 
