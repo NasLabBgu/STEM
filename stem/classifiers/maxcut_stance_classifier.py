@@ -5,13 +5,13 @@ import pylab
 import numpy as np
 from networkx.algorithms import bipartite
 
-from stance_classification.draw_utils import OP_COLOR, SUPPORT_COLOR, new_figure, OPPOSE_COLOR, CUT_EDGE_COLOR, \
+from draw_utils import OP_COLOR, SUPPORT_COLOR, new_figure, OPPOSE_COLOR, CUT_EDGE_COLOR, \
     NON_CUT_EDGE_COLOR, NODE_LABEL_COLOR, TRUE_SUPPORT_COLOR, UNKNOWN_GT_LABEL, TRUE_OPPOSE_COLOR
-from stance_classification.classifiers.base_stance_classifier import BaseStanceClassifier
+from classifiers.base_stance_classifier import BaseStanceClassifier
 import networkx as nx
 
-from stance_classification.classifiers.maxcut import max_cut
-from stance_classification.classifiers.stance_classification_utils import get_cut_from_nodelist
+from classifiers.maxcut import max_cut
+from classifiers.stance_classification_utils import get_cut_from_nodelist
 
 from picos import SymmetricVariable
 

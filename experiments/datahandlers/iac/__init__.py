@@ -1,1 +1,1 @@
-from stance_classification.data.iac.fourforum_interactions import FourForumInteractionsBuilder
+from experiments.datahandlers.iac.fourforum_interactions import FourForumInteractionsBuilder
